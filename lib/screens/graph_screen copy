@@ -1,0 +1,462 @@
+import 'package:acisku/widgets/custom_image_view.dart';
+import 'package:flutter/material.dart';
+import 'package:acisku/utils/image_constant.dart';
+import 'package:acisku/widgets/custom_navbar.dart';
+import 'package:acisku/screens/notification_screen.dart';
+import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fl_chart/fl_chart.dart';
+
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Graph',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primaryColor: const Color(0xFF00D09E),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF00D09E),
+          primary: const Color(0xFF00D09E),
+        ),
+        useMaterial3: true,
+      ),
+      home: const SafeArea(
+        child: Center(
+          child: SizedBox(
+            width: 480,
+            child: GraphScreen(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// main class
+// ignore: must_be_immutable
+class GraphScreen extends StatefulWidget {
+  const GraphScreen({Key? key}) : super(key: key);
+
+  @override
+  State<GraphScreen> createState() => _GraphScreenState();
+  
+}
+
+class _GraphScreenState extends State<GraphScreen> {
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
+      body: Column(
+        children: [
+          // Bagian header yang di-clip
+          ClipPath(
+            clipper: BottomConcaveClipper(),
+            child: Container(
+              color: const Color(0xFF00D09E),
+              width: double.infinity,
+              padding: const EdgeInsets.only(
+                  top: 50, left: 30, right: 30, bottom: 30),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Row atas (logo, teks, notifikasi)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      CustomImageView(
+                        imagePath: ImageConstant.imgLogoTertiary,
+                        height: 55,
+                        width: 55,
+                      ),
+                      const Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            'Grafik \nKeuangan',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              height: 1.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Notifikasi Btn
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => NotificationScreen()),
+                          );
+                        },
+                        child: CustomImageView(
+                          imagePath: ImageConstant.imgNotifIcon,
+                          height: 30,
+                          width: 30,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 25),
+
+                  
+                  SizedBox(height: 70),
+                ],
+              ),
+            ),
+          ),
+
+          // Body selanjutnya (widget lainnya)
+          Expanded(
+            child: _BodyWidget(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// body
+class _BodyWidget extends StatefulWidget {
+  const _BodyWidget({Key? key}) : super(key: key);
+
+  @override
+  State<_BodyWidget> createState() => _BodyWidgetState();
+}
+
+class _BodyWidgetState extends State<_BodyWidget> {
+
+  Map<String, Map<String, double>> _weeklyData = {
+    'Monday': {'income': 0, 'spending': 0},
+    'Tuesday': {'income': 0, 'spending': 0},
+    'Wednesday': {'income': 0, 'spending': 0},
+    'Thursday': {'income': 0, 'spending': 0},
+    'Friday': {'income': 0, 'spending': 0},
+    'Saturday': {'income': 0, 'spending': 0},
+    'Sunday': {'income': 0, 'spending': 0},
+  };
+
+  String _formatCurrencyShort(double value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)} jt';
+    } else if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(1)} rb';
+    } else {
+      return value.toStringAsFixed(0);
+    }
+  }
+
+  double _totalIncome = 0;
+  double _totalSpending = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFinancialData();
+  }
+
+  Future<void> _fetchFinancialData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final now = DateTime.now();
+
+    // Hitung batas awal dan akhir minggu ini
+    final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1)); // Senin
+    final endOfWeek = startOfWeek.add(Duration(days: 6, hours: 23, minutes: 59, seconds: 59)); // Minggu
+
+    try {
+      final incomeSnapshot = await userDoc.collection('income').get();
+      final spendingSnapshot = await userDoc.collection('spending').get();
+
+      _totalIncome = 0;
+      _totalSpending = 0;
+
+      // Reset data mingguan
+      _weeklyData = {
+        'Monday': {'income': 0, 'spending': 0},
+        'Tuesday': {'income': 0, 'spending': 0},
+        'Wednesday': {'income': 0, 'spending': 0},
+        'Thursday': {'income': 0, 'spending': 0},
+        'Friday': {'income': 0, 'spending': 0},
+        'Saturday': {'income': 0, 'spending': 0},
+        'Sunday': {'income': 0, 'spending': 0},
+      };
+
+      for (var doc in incomeSnapshot.docs) {
+        final data = doc.data();
+        if (data['date'] != null && data['amount'] != null) {
+          final date = (data['date'] as Timestamp).toDate();
+          final amount = (data['amount'] ?? 0).toDouble();
+          _totalIncome += amount;
+
+          if (date.isAfter(startOfWeek.subtract(Duration(seconds: 1))) &&
+              date.isBefore(endOfWeek.add(Duration(seconds: 1)))) {
+            final day = DateFormat('EEEE').format(date); // e.g. Monday
+            if (_weeklyData.containsKey(day)) {
+              _weeklyData[day]!['income'] = (_weeklyData[day]!['income'] ?? 0) + amount;
+            }
+          }
+        }
+      }
+
+      for (var doc in spendingSnapshot.docs) {
+        final data = doc.data();
+        if (data['date'] != null && data['amount'] != null) {
+          final date = (data['date'] as Timestamp).toDate();
+          final amount = (data['amount'] ?? 0).toDouble();
+          _totalSpending += amount;
+
+          if (date.isAfter(startOfWeek.subtract(Duration(seconds: 1))) &&
+              date.isBefore(endOfWeek.add(Duration(seconds: 1)))) {
+            final day = DateFormat('EEEE').format(date);
+            if (_weeklyData.containsKey(day)) {
+              _weeklyData[day]!['spending'] = (_weeklyData[day]!['spending'] ?? 0) + amount;
+            }
+          }
+        }
+      }
+
+      print('Weekly data: $_weeklyData');
+      print('Total Income: $_totalIncome | Total Spending: $_totalSpending');
+
+      setState(() {});
+    } catch (e) {
+      print('Gagal mengambil data keuangan: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      bottomNavigationBar: CustomNavbar(currentIndex: 3),
+      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 30.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 350,
+                          height: 55,
+                          child: Text(
+                            'Grafik Keuangan \nMingguan',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color:  Color(0xFF00D09E),
+                              fontSize: 20,
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w700,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // Grafik Keuangan
+                        Container(
+                          width: double.infinity,
+                          height: 330,
+                          padding: EdgeInsets.symmetric(horizontal: 30, vertical: 30),
+                          decoration: BoxDecoration(
+                            color: Color(0xFFDFF7E2),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: BarChart(
+                            BarChartData(
+                              alignment: BarChartAlignment.spaceAround,
+                              barTouchData: BarTouchData(enabled: false),
+                              
+                              titlesData: FlTitlesData(
+                                leftTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    reservedSize: 40,
+                                    getTitlesWidget: (value, meta) {
+                                      return Text(
+                                        _formatCurrencyShort(value),
+                                        style: TextStyle(fontSize: 10),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                rightTitles: AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false), // ❌ Matikan sumbu kanan
+                                ),
+                                bottomTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    getTitlesWidget: (double value, TitleMeta meta) {
+                                      const days = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+                                      return Text(
+                                        (value.toInt() >= 0 && value.toInt() < days.length) ? days[value.toInt()] : '',
+                                        style: TextStyle(fontSize: 10),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                topTitles: AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false),
+                                ),
+                              ),
+
+
+                              borderData: FlBorderData(show: false),
+                              barGroups: List.generate(7, (index) {
+                                final day = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][index];
+                                final income = _weeklyData[day]?['income'] ?? 0;
+                                final spending = _weeklyData[day]?['spending'] ?? 0;
+                                return BarChartGroupData(
+                                  x: index,
+                                  barRods: [
+                                    BarChartRodData(toY: income.toDouble(), color: Color(0xFF0068FF), width: 8),
+                                    BarChartRodData(toY: spending.toDouble(), color: Color(0xFFFF3B3B), width: 8),
+                                  ],
+                                );
+                              }),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Info Saldo dan Pengeluaran
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            // Total Pemasukan
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CustomImageView(
+                                      imagePath: ImageConstant.imgG1,
+                                      height: 14,
+                                      width: 14,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      'Total Pemasukan',
+                                      style: TextStyle(
+                                        color: Color(0xFF0068FF),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_totalIncome),
+                                  style: TextStyle(
+                                    color: Color(0xFF0068FF),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 21,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // Pemisah
+                            Container(width: 2, height: 50, color: Color(0xFF00D09E)),
+                            // Total Pengeluaran
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CustomImageView(
+                                      imagePath: ImageConstant.imgG2,
+                                      height: 14,
+                                      width: 14,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      'Total Pengeluaran',
+                                      style: TextStyle(
+                                        color: Color(0xFFFF3B3B),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_totalSpending),
+                                  style: TextStyle(
+                                    color: Color(0xFFFF3B3B),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 21,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// class clip top
+class BottomConcaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    const double curveHeight = 70.0;
+
+    Path path = Path();
+    path.moveTo(0, 0); // kiri atas
+
+    // Turun ke bawah sampai cekungan kiri
+    path.lineTo(0, size.height);
+    path.quadraticBezierTo(
+      0,
+      size.height - curveHeight,
+      curveHeight,
+      size.height - curveHeight,
+    );
+
+    // Garis lurus tengah
+    path.lineTo(size.width - curveHeight, size.height - curveHeight);
+
+    // Cekungan kanan
+    path.quadraticBezierTo(
+      size.width,
+      size.height - curveHeight,
+      size.width,
+      size.height,
+    );
+
+    // Kembali ke atas
+    path.lineTo(size.width, 0);
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}

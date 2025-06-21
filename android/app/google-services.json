@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "288120395867",
+    "project_id": "acisku-bc32f",
+    "storage_bucket": "acisku-bc32f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:288120395867:android:2b45ca426d84d48f74077e",
+        "android_client_info": {
+          "package_name": "com.example.acisku"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_nRr0Ju5YoT9wWEWARpe_8gJpR1xbvyE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
