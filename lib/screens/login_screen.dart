@@ -1,12 +1,12 @@
-import 'package:acisku/utils/notif_service.dart';
+import 'package:mycafeinventory/utils/notif_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:acisku/routes/app_routes.dart';
-import 'package:acisku/widgets/custom_image_view.dart';
-import 'package:acisku/utils/image_constant.dart';
+import 'package:mycafeinventory/routes/app_routes.dart';
+import 'package:mycafeinventory/widgets/custom_image_view.dart';
+import 'package:mycafeinventory/utils/image_constant.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:acisku/auth_page/auth_page.dart';
+import 'package:mycafeinventory/auth_page/auth_page.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -152,7 +152,7 @@ class _LoginFormWidgetState extends State<_LoginFormWidget> {
       await addNotification(
         userId: user!.uid,
         title: 'Hallo Selamat Datang!',
-        message: 'Selamat datang di Aplikasi Acisku. Mulai catat keuanganmu dan konsultasikan langkah finanisalmu dengan fitur chatbot acisku!',
+        message: 'Selamat datang di Aplikasi mycafeinventory. Mulai catat keuanganmu dan konsultasikan langkah finanisalmu dengan fitur chatbot mycafeinventory!',
         type: 'welcome',
       );
 

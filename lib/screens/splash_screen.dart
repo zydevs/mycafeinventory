@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'package:acisku/routes/app_routes.dart';
-import 'package:acisku/widgets/custom_image_view.dart';
+import 'package:mycafeinventory/routes/app_routes.dart';
+import 'package:mycafeinventory/widgets/custom_image_view.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../utils/image_constant.dart'; // Pastikan path dan value-nya benar

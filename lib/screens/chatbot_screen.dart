@@ -1,9 +1,9 @@
-import 'package:acisku/widgets/custom_image_view.dart';
+import 'package:mycafeinventory/widgets/custom_image_view.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
-import 'package:acisku/utils/image_constant.dart';
+import 'package:mycafeinventory/utils/image_constant.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);

@@ -1,11 +1,11 @@
-import 'package:acisku/routes/app_routes.dart';
-import 'package:acisku/widgets/custom_image_view.dart';
+import 'package:mycafeinventory/routes/app_routes.dart';
+import 'package:mycafeinventory/widgets/custom_image_view.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:acisku/utils/image_constant.dart';
-import 'package:acisku/widgets/custom_navbar.dart';
-import 'package:acisku/screens/notification_screen.dart';
+import 'package:mycafeinventory/utils/image_constant.dart';
+import 'package:mycafeinventory/widgets/custom_navbar.dart';
+import 'package:mycafeinventory/screens/notification_screen.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -329,7 +329,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
                               ],
                             ),
                           ),
-                          
+
                         ],
                       ),
                     ),

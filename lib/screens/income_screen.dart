@@ -1,10 +1,10 @@
-import 'package:acisku/routes/app_routes.dart';
-import 'package:acisku/screens/notification_screen.dart';
-import 'package:acisku/utils/notif_service.dart';
-import 'package:acisku/widgets/custom_image_view.dart';
+import 'package:mycafeinventory/routes/app_routes.dart';
+import 'package:mycafeinventory/screens/notification_screen.dart';
+import 'package:mycafeinventory/utils/notif_service.dart';
+import 'package:mycafeinventory/widgets/custom_image_view.dart';
 import 'package:flutter/material.dart';
-import 'package:acisku/utils/image_constant.dart';
-import 'package:acisku/widgets/custom_navbar.dart';
+import 'package:mycafeinventory/utils/image_constant.dart';
+import 'package:mycafeinventory/widgets/custom_navbar.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';

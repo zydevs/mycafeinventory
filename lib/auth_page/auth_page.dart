@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:acisku/screens/login_screen.dart';
-import 'package:acisku/screens/home_screen.dart';
-import 'package:acisku/routes/app_routes.dart';
+import 'package:mycafeinventory/screens/login_screen.dart';
+import 'package:mycafeinventory/screens/home_screen.dart';
+import 'package:mycafeinventory/routes/app_routes.dart';
 
 class AuthPage extends StatelessWidget {
   const AuthPage({super.key});
