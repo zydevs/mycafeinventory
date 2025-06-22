@@ -63,6 +63,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
     Navigator.pushNamed(context, AppRoutes.loginScreen);
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchFinancialData();
+  }
+
+  Future<void> _fetchFinancialData() async {
+    final userDoc = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od'); // pakai UID tetap
+
+    try {
+      final saleSnapshot = await userDoc.collection('sale').get();
+      final inventorySnapshot = await userDoc.collection('inventory').get();
+
+      double totalSale = saleSnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['price'] ?? 0).toDouble();
+      });
+
+      double totalInventory = inventorySnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['total'] ?? 0).toDouble();
+      });
+
+      setState(() {
+        _balance = totalSale;
+        _totalSpending = totalInventory;
+      });
+
+    } catch (e) {
+      print('Gagal mengambil data header: $e');
+    }
+  }
+
   // Header
   @override
   Widget build(BuildContext context) {
@@ -146,45 +177,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Total Saldo
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CustomImageView(
-                                imagePath: ImageConstant.imgIncomeMini,
-                                height: 14,
-                                width: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              const Text(
-                                'Total Saldo',
-                                style: TextStyle(
-                                  color: Color(0xFFDFF7E2),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            NumberFormat.currency(
-                                    locale: 'id_ID',
-                                    symbol: 'Rp ',
-                                    decimalDigits: 0)
-                                .format(_balance),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 21,
-                            ),
-                          ),
-                        ],
-                      ),
-                      // Pemisah
-                      Container(width: 2, height: 50, color: Colors.white),
-                      // Total Pemasukan
+                      // Saldo
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -207,11 +200,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            NumberFormat.currency(
-                                    locale: 'id_ID',
-                                    symbol: 'Rp ',
-                                    decimalDigits: 0)
-                                .format(_totalIncome),
+                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_balance),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -220,9 +209,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           ),
                         ],
                       ),
-                      // Pemisah
+
+                      // Garis pemisah
                       Container(width: 2, height: 50, color: Colors.white),
-                      // Total Pengeluaran
+
+                      // Pengeluaran
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -245,11 +236,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            NumberFormat.currency(
-                                    locale: 'id_ID',
-                                    symbol: 'Rp ',
-                                    decimalDigits: 0)
-                                .format(_totalSpending),
+                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_totalSpending),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -276,42 +263,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  // Get Data
-  @override
-  void initState() {
-    super.initState();
-    _fetchFinancialData();
-  }
-
-  Future<void> _fetchFinancialData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final userDoc =
-        FirebaseFirestore.instance.collection('users').doc(user.uid);
-
-    try {
-      // Ambil balance langsung
-      final userSnapshot = await userDoc.get();
-      _balance = (userSnapshot.data()?['balance'] ?? 0).toDouble();
-
-      // Hitung total income
-      final incomeSnapshot = await userDoc.collection('income').get();
-      _totalIncome = incomeSnapshot.docs.fold(0, (sum, doc) {
-        return sum + (doc.data()['amount'] ?? 0).toDouble();
-      });
-
-      // Hitung total spending
-      final spendingSnapshot = await userDoc.collection('spending').get();
-      _totalSpending = spendingSnapshot.docs.fold(0, (sum, doc) {
-        return sum + (doc.data()['amount'] ?? 0).toDouble();
-      });
-
-      setState(() {});
-    } catch (e) {
-      print('Gagal mengambil data keuangan: $e');
-    }
-  }
 }
 
 // class body
@@ -326,155 +277,61 @@ class _FormWidget extends StatefulWidget {
 
 // Form Widget
 class _FormWidgetState extends State<_FormWidget> {
-  final _incomeController = TextEditingController();
-  final _expenseController = TextEditingController();
-  final _limitController = TextEditingController();
-  final _categoryController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _stokController = TextEditingController();
+  final _unitController = TextEditingController();
   final _dateController = TextEditingController();
   final _currencyFormatter =
       NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
-  Future<void> saveTransaction() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final userRef =
-        FirebaseFirestore.instance.collection('users').doc(user.uid);
+  Future<void> saveInventory() async {
+    final userRef = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od');
 
     try {
-      final rawIncome =
-          _incomeController.text.replaceAll(RegExp(r'[^0-9]'), '');
-      final rawExpense =
-          _expenseController.text.replaceAll(RegExp(r'[^0-9]'), '');
-      final rawLimit = _limitController.text.replaceAll(RegExp(r'[^0-9]'), '');
-      final source = _categoryController.text;
-      final date = _dateController.text.isNotEmpty
-          ? DateTime.parse(_dateController.text)
-          : DateTime.now();
+      final name = _nameController.text.trim();
+      final priceText = _priceController.text.replaceAll(RegExp(r'[^0-9]'), '');
+      final stokText = _stokController.text.replaceAll(RegExp(r'[^0-9]'), '');
+      final unit = _unitController.text.trim();
 
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final snapshot = await transaction.get(userRef);
-        double balance = (snapshot.data()?['balance'] ?? 0).toDouble();
+      final price = double.tryParse(priceText) ?? 0;
+      final stok = double.tryParse(stokText) ?? 0;
+      final total = price * stok;
 
-        if (widget.selectedPeriod == 'Pemasukan') {
-          final amount = double.parse(rawIncome);
-          transaction.set(
-            userRef.collection('income').doc(),
-            {
-              'amount': amount,
-              'source': source,
-              'date': Timestamp.fromDate(date),
-            },
-          );
-          balance += amount;
-          transaction.update(userRef, {'balance': balance});
-          Get.snackbar(
-            "Pemasukan",
-            "Berhasil Disimpan",
-            colorText: Colors.white,
-            backgroundColor: Color(0xFF00D09E),
-          );
+      if (name.isEmpty || unit.isEmpty || price == 0 || stok == 0) {
+        Get.snackbar("Input Gagal", "Mohon lengkapi semua field", backgroundColor: Colors.red, colorText: Colors.white);
+        return;
+      }
 
-          // add notif
-          await addNotification(
-            userId: user.uid,
-            title: 'Pemasukanmu dicatat!',
-            message:
-                'Hallo, pemasukanmu bulan ini berhasil dicatat! Kelola keuanganmu dengan baik ya!',
-            type: 'income',
-          );
-        }
-
-        if (widget.selectedPeriod == 'Pengeluaran') {
-          final amount = double.parse(rawExpense);
-          transaction.set(
-            userRef.collection('spending').doc(),
-            {
-              'amount': amount,
-              'source': source,
-              'date': Timestamp.fromDate(date),
-            },
-          );
-          balance -= amount;
-          transaction.update(userRef, {'balance': balance});
-          Get.snackbar(
-            "Pengeluaran",
-            "Berhasil Disimpan",
-            colorText: Colors.white,
-            backgroundColor: Color(0xFF00D09E),
-          );
-
-          // add notif
-          await addNotification(
-            userId: user.uid,
-            title: 'Pengeluaranmu dicatat!',
-            message:
-                'Hallo, pengeluaranmu berhasil dicatat! Kelola keuanganmu dengan baik ya!',
-            type: 'spending',
-          );
-
-          // notif warning limit
-          final userDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .get();
-
-          if (userDoc.exists) {
-            double limit = userDoc.data()?['limitSpend']?.toDouble() ?? 0.0;
-            if (amount > limit) {
-              await addNotification(
-                userId: user.uid,
-                title: 'Peringatan! Pengeluaran melebihi Limit!',
-                message:
-                    'Hallo, Pengeluaran melebihi limit! Kelola keuanganmu lebih baik ya',
-                type: 'limit-warning',
-              );
-            }
-          }
-        }
-
-        if (widget.selectedPeriod == 'Limit') {
-          final limit = double.parse(rawLimit);
-          transaction.update(userRef, {'limitSpend': limit});
-          Get.snackbar(
-            "Limit",
-            "Berhasil Disimpan",
-            colorText: Colors.white,
-            backgroundColor: Color(0xFF00D09E),
-          );
-          // add notif
-          await addNotification(
-            userId: user.uid,
-            title: 'Limit Pengeluaran Tersimpan!',
-            message:
-                'Hallo, Kamu telah menetapkan limit pengeluaran bulan ini.',
-            type: 'limit',
-          );
-        }
+      await userRef.collection('inventory').add({
+        'nameInv': name,
+        'priceInv': price,
+        'stokInv': stok,
+        'unitInv': unit,
+        'total': total,
       });
 
-      // Bersihkan form
-      _incomeController.clear();
-      _expenseController.clear();
-      _limitController.clear();
-      _categoryController.clear();
-      _dateController.clear();
+      _nameController.clear();
+      _priceController.clear();
+      _stokController.clear();
+      _unitController.clear();
 
-      // Navigator.pushNamed(context, AppRoutes.transactionIncome);
+      Get.snackbar("Inventaris", "Data berhasil disimpan", backgroundColor: Color(0xFF00D09E), colorText: Colors.white);
     } catch (e) {
-      print('Gagal menyimpan data: $e');
+      print('Gagal menyimpan data inventaris: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Terjadi kesalahan saat menyimpan data.')),
       );
     }
   }
 
+
   @override
   void dispose() {
-    _incomeController.dispose();
-    _expenseController.dispose();
-    _limitController.dispose();
-    _categoryController.dispose();
+    _nameController.dispose();
+    _priceController.dispose();
+    _stokController.dispose();
+    _unitController.dispose();
     _dateController.dispose();
     super.dispose();
   }
@@ -483,10 +340,10 @@ class _FormWidgetState extends State<_FormWidget> {
   void didUpdateWidget(covariant _FormWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.selectedPeriod != widget.selectedPeriod) {
-      _incomeController.clear();
-      _expenseController.clear();
-      _limitController.clear();
-      _categoryController.clear();
+      _nameController.clear();
+      _priceController.clear();
+      _stokController.clear();
+      _unitController.clear();
       _dateController.clear();
     }
   }
@@ -503,41 +360,59 @@ class _FormWidgetState extends State<_FormWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const SizedBox(height: 40),
               _CustomTextField(
-                controller: _incomeController,
+                controller: _nameController,
                 label: 'Nama Inventori',
                 leftIconPath: ImageConstant.imgIn1,
-                keyboardType: TextInputType.number,
-                inputFormatters: [currencyInputFormatter()],
-                // inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
               const SizedBox(height: 20),
               _CustomTextField(
-                controller: _expenseController,
+                controller: _stokController,
                 label: 'Stok',
                 leftIconPath: ImageConstant.imgIn1,
                 keyboardType: TextInputType.number,
-                inputFormatters: [currencyInputFormatter()],
-                // inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
               const SizedBox(height: 20),
               _CustomTextField(
-                controller: _categoryController,
+                controller: _unitController,
                 label: 'Satuan',
                 leftIconPath: ImageConstant.imgIn2,
               ),
               const SizedBox(height: 20),
               _CustomTextField(
-                controller: _categoryController,
+                controller: _priceController,
                 label: 'Harga Satuan',
                 leftIconPath: ImageConstant.imgIn2,
+                keyboardType: TextInputType.number,
+                inputFormatters: [currencyInputFormatter()],
+              ),
+              const SizedBox(height: 20),
+              _CustomTextField(
+                controller: _dateController,
+                label: 'Tanggal',
+                leftIconPath: ImageConstant.imgIn2,
+                readOnly: true,
+                onTap: () async {
+                  DateTime? pickedDate = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.now(),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (pickedDate != null) {
+                    String formattedDate = DateFormat('yyyy-MM-dd').format(pickedDate);
+                    setState(() {
+                      _dateController.text = formattedDate;
+                    });
+                  }
+                },
               ),
               const SizedBox(height: 20),
               _buildButton(
                 label: 'Simpan',
                 onPressed: () {
-                  saveTransaction();
+                  saveInventory();
                 },
               ),
               const SizedBox(height: 40),

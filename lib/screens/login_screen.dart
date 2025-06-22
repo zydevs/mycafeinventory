@@ -220,12 +220,12 @@ class _LoginFormWidgetState extends State<_LoginFormWidget> {
             const SizedBox(height: 25),
             _buildButton(label: 'Login', onPressed: signUserIn),
             const Spacer(),
-            _buildButton(
-              label: 'Buat akun baru',
-              onPressed: () {
-                Navigator.pushNamed(context, AppRoutes.registScreen);
-              },
-            ),
+            // _buildButton(
+            //   label: 'Buat akun baru',
+            //   onPressed: () {
+            //     Navigator.pushNamed(context, AppRoutes.registScreen);
+            //   },
+            // ),
           ],
         ),
       ),

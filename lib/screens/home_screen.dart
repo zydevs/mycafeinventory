@@ -62,29 +62,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchFinancialData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final userDoc = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od'); // pakai UID tetap
 
     try {
-      
-      final userSnapshot = await userDoc.get();
-      _balance = (userSnapshot.data()?['balance'] ?? 0).toDouble();
+      final saleSnapshot = await userDoc.collection('sale').get();
+      final inventorySnapshot = await userDoc.collection('inventory').get();
 
-      // final spendingSnapshot = await userDoc.collection('spending').get();
-        final spendingSnapshot = await userDoc
-      .collection('spending')
-      .orderBy('date', descending: true)
-      .get();
-
-      _totalSpending = spendingSnapshot.docs.fold(0.0, (sum, doc) {
-        return sum + (doc.data()['amount'] ?? 0).toDouble();
+      double totalSale = saleSnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['price'] ?? 0).toDouble();
       });
 
-      setState(() {});
+      double totalInventory = inventorySnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['total'] ?? 0).toDouble();
+      });
+
+      setState(() {
+        _balance = totalSale;
+        _totalSpending = totalInventory;
+      });
+
     } catch (e) {
-      print('Gagal mengambil data keuangan: $e');
+      print('Gagal mengambil data header: $e');
     }
   }
 
@@ -262,13 +260,12 @@ class _BodyWidget extends StatefulWidget {
 
 // Body
 class _BodyWidgetState extends State<_BodyWidget> {
-
   String _selectedPeriod = 'Penjualan'; // default
   double _limitPengeluaran = 0;
   double _balance = 0;
   double _totalSpending = 0;
 
-  List<Map<String, dynamic>> _transactions = [];  
+  List<Map<String, dynamic>> _transactions = [];
 
   @override
   void initState() {
@@ -277,51 +274,72 @@ class _BodyWidgetState extends State<_BodyWidget> {
   }
 
   Future<void> _fetchFinancialData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final userDoc = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od');
 
     try {
-      final userSnapshot = await userDoc.get();
-      _balance = (userSnapshot.data()?['balance'] ?? 0).toDouble();
-      _limitPengeluaran = (userSnapshot.data()?['limitSpend'] ?? 0).toDouble();
+      final saleSnapshot = await userDoc.collection('sale').get();
+      final inventorySnapshot = await userDoc.collection('inventory').get();
 
-      final incomeSnapshot = await userDoc.collection('income').get();
-      final spendingSnapshot = await userDoc.collection('spending').get();
+      double totalSale = saleSnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['price'] ?? 0).toDouble();
+      });
 
-      // Gabungkan income dan spending
-      _transactions = [
-        ...incomeSnapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'title': data['source'] ?? '',
-            'date': (data['date'] as Timestamp?)?.toDate() != null
-                ? DateFormat('dd MMM yyyy').format((data['date'] as Timestamp).toDate())
-                : '',
-            'type': 'Penjualan',
-            'amount': (data['amount'] ?? 0).toDouble(),
-          };
-        }),
-        ...spendingSnapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'title': data['source'] ?? '',
-            'date': (data['date'] as Timestamp?)?.toDate() != null
-                ? DateFormat('dd MMM yyyy').format((data['date'] as Timestamp).toDate())
-                : '',
-            'type': 'Pengeluaran',
-            'amount': (data['amount'] ?? 0).toDouble(),
-          };
-        }),
-      ];
+      double totalInventory = inventorySnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['total'] ?? 0).toDouble();
+      });
 
-      // Hitung total pengeluaran
-      _totalSpending = _transactions
-          .where((t) => t['type'] == 'Pengeluaran')
-          .fold(0.0, (sum, t) => sum + (t['amount'] as double));
+      final List<Map<String, dynamic>> transactions = [];
 
-      setState(() {}); // Perbarui UI
+      // Penjualan
+      for (var doc in saleSnapshot.docs) {
+        final data = doc.data();
+        final Timestamp? timestamp = data['date'];
+        String timeLabel = '-';
+        String dateLabel = '-';
+
+        if (timestamp != null) {
+          final dateTime = timestamp.toDate();
+          timeLabel = DateFormat.Hm().format(dateTime) + ' WIB'; // jam
+          dateLabel = DateFormat('dd MMM yyyy').format(dateTime); // tanggal
+        }
+
+        transactions.add({
+          'title': data['menu'] ?? 'Penjualan',
+          'date': dateLabel,
+          'amount': data['price'] ?? 0,
+          'type': timeLabel,           // tampilan: jam
+          'category': 'Penjualan',     // untuk switch filter
+        });
+      }
+
+      // Pengeluaran
+      for (var doc in inventorySnapshot.docs) {
+        final data = doc.data();
+        final stok = data['stokInv']?.toString() ?? '-';
+        final unit = data['unitInv']?.toString() ?? '';
+        final stokLabel = '$stok $unit';
+        final Timestamp? timestamp = data['date'];
+        String dateLabel = '-';
+
+        if (timestamp != null) {
+          final dateTime = timestamp.toDate();
+          dateLabel = DateFormat('dd MMM yyyy').format(dateTime); // tanggal
+        }
+
+        transactions.add({
+          'title': data['nameInv'] ?? 'Pengeluaran',
+          'date': dateLabel,
+          'amount': data['total'] ?? 0,
+          'type': stokLabel,           // tampilan: "1 Kg"
+          'category': 'Pengeluaran',   // untuk switch filter
+        });
+      }
+
+      setState(() {
+        _balance = totalSale;
+        _totalSpending = totalInventory;
+        _transactions = transactions;
+      });
     } catch (e) {
       print('Gagal mengambil data keuangan: $e');
     }
@@ -340,51 +358,47 @@ class _BodyWidgetState extends State<_BodyWidget> {
                 Container(
                   width: double.infinity,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 30.0, vertical: 0.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 0.0),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                      _buildSwitchButtonGroup(),
-                      const SizedBox(height: 24),
-
-                      // Cek apakah _transactions berisi data untuk _selectedPeriod
-                      ..._transactions.where((tx) => tx['type'] == _selectedPeriod).isEmpty
-                      ? [
-                          Center(
-                            child: Text(
-                              "Silahkan catat keuanganmu dahulu",
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'Poppins',
-                                color: const Color(0xFF00D09E),
-                              ),
-                            ),
-                          ),
-                        ]
-                      : _transactions
-                        .where((tx) => tx['type'] == _selectedPeriod)
-                        .map((tx) {
-                          final isPenjualan = tx['type'] == 'Penjualan';
-                          final amountFormatted = NumberFormat.currency(
-                            locale: 'id_ID',
-                            symbol: isPenjualan ? '+Rp ' : '-Rp ',
-                            decimalDigits: 0,
-                          ).format(tx['amount']);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 14.0),
-                            child: _buildTransactionRow(
-                              title: tx['title'],
-                              date: tx['date'],
-                              type: tx['type'],
-                              amount: amountFormatted,
-                              amountColor: isPenjualan
-                                  ? const Color(0xFF0068FF)
-                                  : const Color(0xFFFF3B3B),
-                            ),
-                          );
-                        }).toList(),
-                       
+                        _buildSwitchButtonGroup(),
+                        const SizedBox(height: 24),
+                        ..._transactions.where((tx) => tx['category'] == _selectedPeriod).isEmpty
+                            ? [
+                                Center(
+                                  child: Text(
+                                    "Silahkan catat penjualanmu dahulu",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontFamily: 'Poppins',
+                                      color: const Color(0xFF00D09E),
+                                    ),
+                                  ),
+                                ),
+                              ]
+                            : _transactions
+                                .where((tx) => tx['category'] == _selectedPeriod)
+                                .map((tx) {
+                                  final isPenjualan = tx['category'] == 'Penjualan';
+                                  final amountFormatted = NumberFormat.currency(
+                                    locale: 'id_ID',
+                                    symbol: isPenjualan ? '+Rp ' : '-Rp ',
+                                    decimalDigits: 0,
+                                  ).format(tx['amount']);
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 14.0),
+                                    child: _buildTransactionRow(
+                                      title: tx['title'],
+                                      date: tx['date'],
+                                      type: tx['type'], // jam atau "1 Kg"
+                                      amount: amountFormatted,
+                                      amountColor: isPenjualan
+                                          ? const Color(0xFF0068FF)
+                                          : const Color(0xFFFF3B3B),
+                                    ),
+                                  );
+                                }).toList(),
                       ],
                     ),
                   ),
@@ -397,16 +411,14 @@ class _BodyWidgetState extends State<_BodyWidget> {
     );
   }
 
-  // Widget tambahan untuk ringkas riwayat keuangan
   Widget _buildTransactionRow({
     required String title,
     required String date,
     required String type,
     required String amount,
     required Color amountColor,
-    }) {
-    // Tentukan ikon berdasarkan tipe transaksi
-    final String iconPath = type == 'Penjualan'
+  }) {
+    final String iconPath = type.contains('WIB') // indikator Penjualan
         ? ImageConstant.imgN2
         : ImageConstant.imgN3;
 
@@ -417,7 +429,6 @@ class _BodyWidgetState extends State<_BodyWidget> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ICON
           SizedBox(
             width: 57,
             height: 53,
@@ -431,8 +442,6 @@ class _BodyWidgetState extends State<_BodyWidget> {
             ),
           ),
           const SizedBox(width: 10),
-
-          // Judul dan tanggal
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -459,16 +468,12 @@ class _BodyWidgetState extends State<_BodyWidget> {
             ],
           ),
           const SizedBox(width: 18),
-
-          // Garis vertikal
           Container(
             width: 1,
             height: 40,
             color: const Color(0xFF00D09E),
           ),
           const SizedBox(width: 18),
-
-          // Jenis transaksi
           Text(
             type,
             style: const TextStyle(
@@ -480,16 +485,12 @@ class _BodyWidgetState extends State<_BodyWidget> {
             ),
           ),
           const SizedBox(width: 18),
-
-          // Garis vertikal
           Container(
             width: 1,
             height: 40,
             color: const Color(0xFF00D09E),
           ),
           const SizedBox(width: 18),
-
-          // Jumlah uang
           Expanded(
             child: Text(
               amount,
@@ -527,14 +528,12 @@ class _BodyWidgetState extends State<_BodyWidget> {
               onTap: () {
                 setState(() {
                   _selectedPeriod = option;
-                  // Aksi sesuai pilihan bisa ditambahkan di sini
                 });
               },
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
-                  color:
-                      isSelected ? const Color(0xFF00D09E) : Colors.transparent,
+                  color: isSelected ? const Color(0xFF00D09E) : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 alignment: Alignment.center,

@@ -52,15 +52,47 @@ class IncomeScreen extends StatefulWidget {
 class _IncomeScreenState extends State<IncomeScreen> {
   String _selectedPeriod = 'Pemasukan'; // default
 
-  double _totalIncome = 0;
-  double _totalSpending = 0;
-  double _balance = 0;
 
   void signUserOut(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
 
     // Navigasi ke login screen, hapus semua riwayat halaman
     Navigator.pushNamed(context, AppRoutes.loginScreen);
+  }
+
+  double _balance = 0;
+  double _totalSpending = 0;
+  double _totalIncome = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFinancialData();
+  }
+
+  Future<void> _fetchFinancialData() async {
+    final userDoc = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od'); // pakai UID tetap
+
+    try {
+      final saleSnapshot = await userDoc.collection('sale').get();
+      final inventorySnapshot = await userDoc.collection('inventory').get();
+
+      double totalSale = saleSnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['price'] ?? 0).toDouble();
+      });
+
+      double totalInventory = inventorySnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['total'] ?? 0).toDouble();
+      });
+
+      setState(() {
+        _balance = totalSale;
+        _totalSpending = totalInventory;
+      });
+
+    } catch (e) {
+      print('Gagal mengambil data header: $e');
+    }
   }
 
   // Header
@@ -145,41 +177,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Total Saldo
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CustomImageView(
-                                imagePath: ImageConstant.imgIncomeMini,
-                                height: 14,
-                                width: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              const Text(
-                                'Total Saldo',
-                                style: TextStyle(
-                                  color: Color(0xFFDFF7E2),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_balance),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 21,
-                            ),
-                          ),
-                        ],
-                      ),
-                      // Pemisah
-                      Container(width: 2, height: 50, color: Colors.white),
-                      // Total Pemasukan
+                      // Saldo
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -202,7 +200,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_totalIncome),
+                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_balance),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -211,9 +209,11 @@ class _IncomeScreenState extends State<IncomeScreen> {
                           ),
                         ],
                       ),
-                      // Pemisah
+
+                      // Garis pemisah
                       Container(width: 2, height: 50, color: Colors.white),
-                      // Total Pengeluaran
+
+                      // Pengeluaran
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -263,42 +263,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
     );
   }
 
-  // Get Data
-  @override
-  void initState() {
-    super.initState();
-    _fetchFinancialData();
-  }
-
-  Future<void> _fetchFinancialData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
-
-    try {
-      // Ambil balance langsung
-      final userSnapshot = await userDoc.get();
-      _balance = (userSnapshot.data()?['balance'] ?? 0).toDouble();
-
-      // Hitung total income
-      final incomeSnapshot = await userDoc.collection('income').get();
-      _totalIncome = incomeSnapshot.docs.fold(0, (sum, doc) {
-        return sum + (doc.data()['amount'] ?? 0).toDouble();
-      });
-
-      // Hitung total spending
-      final spendingSnapshot = await userDoc.collection('spending').get();
-      _totalSpending = spendingSnapshot.docs.fold(0, (sum, doc) {
-        return sum + (doc.data()['amount'] ?? 0).toDouble();
-      });
-
-      setState(() {});
-    } catch (e) {
-      print('Gagal mengambil data keuangan: $e');
-    }
-  }
-
 }
 
 // class body
@@ -311,137 +275,52 @@ class _FormWidget extends StatefulWidget {
   State<_FormWidget> createState() => _FormWidgetState();
 }
 
-// Form Widget
-class _FormWidgetState extends State<_FormWidget> {
-  final _incomeController = TextEditingController();
-  final _expenseController = TextEditingController();
-  final _limitController = TextEditingController();
-  final _categoryController = TextEditingController();
-  final _dateController = TextEditingController();
-  final _currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+  // Form Widget
+  class _FormWidgetState extends State<_FormWidget> {
+    final _menuController = TextEditingController();
+    final _priceController = TextEditingController();
+    final _methodController = TextEditingController();
+    final _dateController = TextEditingController();
+    final _currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
   Future<void> saveTransaction() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    // Ganti UID di sini langsung
+    final userRef = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od');
 
     try {
-      final rawIncome = _incomeController.text.replaceAll(RegExp(r'[^0-9]'), '');
-      final rawExpense = _expenseController.text.replaceAll(RegExp(r'[^0-9]'), '');
-      final rawLimit = _limitController.text.replaceAll(RegExp(r'[^0-9]'), '');
-      final source = _categoryController.text;
+      final rawPrice = _priceController.text.replaceAll(RegExp(r'[^0-9]'), '');
+      final price = double.tryParse(rawPrice) ?? 0.0;
+      final menu = _menuController.text.trim();
+      final method = _methodController.text.trim();
       final date = _dateController.text.isNotEmpty
           ? DateTime.parse(_dateController.text)
           : DateTime.now();
 
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final snapshot = await transaction.get(userRef);
-        double balance = (snapshot.data()?['balance'] ?? 0).toDouble();
-
-        if (widget.selectedPeriod == 'Pemasukan') {
-          final amount = double.parse(rawIncome);
-          transaction.set(
-            userRef.collection('income').doc(),
-            {
-              'amount': amount,
-              'source': source,
-              'date': Timestamp.fromDate(date),
-            },
-          );
-          balance += amount;
-          transaction.update(userRef, {'balance': balance});
-          Get.snackbar(
-            "Pemasukan",
-            "Berhasil Disimpan",
-            colorText: Colors.white,
-            backgroundColor: Color(0xFF00D09E),
-          );
-
-          // add notif
-          await addNotification(
-            userId: user.uid,
-            title: 'Pemasukanmu dicatat!',
-            message: 'Hallo, pemasukanmu bulan ini berhasil dicatat! Kelola keuanganmu dengan baik ya!',
-            type: 'income',
-          );
-        }
-
-        if (widget.selectedPeriod == 'Pengeluaran') {
-          final amount = double.parse(rawExpense);
-          transaction.set(
-            userRef.collection('spending').doc(),
-            {
-              'amount': amount,
-              'source': source,
-              'date': Timestamp.fromDate(date),
-            },
-          );
-          balance -= amount;
-          transaction.update(userRef, {'balance': balance});
-          Get.snackbar(
-            "Pengeluaran",
-            "Berhasil Disimpan",
-            colorText: Colors.white,
-            backgroundColor: Color(0xFF00D09E),
-          );
-
-          // add notif
-          await addNotification(
-            userId: user.uid,
-            title: 'Pengeluaranmu dicatat!',
-            message: 'Hallo, pengeluaranmu berhasil dicatat! Kelola keuanganmu dengan baik ya!',
-            type: 'spending',
-          );
-
-          // notif warning limit
-          final userDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .get();
-
-          if (userDoc.exists) {
-            double limit = userDoc.data()?['limitSpend']?.toDouble() ?? 0.0;
-            if (amount > limit) {
-              await addNotification(
-                userId: user.uid,
-                title: 'Peringatan! Pengeluaran melebihi Limit!',
-                message: 'Hallo, Pengeluaran melebihi limit! Kelola keuanganmu lebih baik ya',
-                type: 'limit-warning',
-              );
-            }
-          }
-          
-        }
-
-        if (widget.selectedPeriod == 'Limit') {
-          final limit = double.parse(rawLimit);
-          transaction.update(userRef, {'limitSpend': limit});
-          Get.snackbar(
-            "Limit",
-            "Berhasil Disimpan",
-            colorText: Colors.white,
-            backgroundColor: Color(0xFF00D09E),
-          );
-          // add notif
-          await addNotification(
-            userId: user.uid,
-            title: 'Limit Pengeluaran Tersimpan!',
-            message: 'Hallo, Kamu telah menetapkan limit pengeluaran bulan ini.',
-            type: 'limit',
-          );
-        }
-
+      // Simpan ke subkoleksi sale
+      await userRef.collection('sale').add({
+        'menu': menu,
+        'price': price,
+        'method': method,
+        'date': Timestamp.fromDate(date),
       });
 
-      // Bersihkan form
-      _incomeController.clear();
-      _expenseController.clear();
-      _limitController.clear();
-      _categoryController.clear();
+      // Update balance user
+      await userRef.set({
+        'balance': FieldValue.increment(price),
+      }, SetOptions(merge: true));
+
+      // Reset form
+      _menuController.clear();
+      _priceController.clear();
+      _methodController.clear();
       _dateController.clear();
 
-      // Navigator.pushNamed(context, AppRoutes.transactionIncome);
+      Get.snackbar(
+        "Penjualan",
+        "Data berhasil disimpan",
+        colorText: Colors.white,
+        backgroundColor: Color(0xFF00D09E),
+      );
     } catch (e) {
       print('Gagal menyimpan data: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -452,10 +331,9 @@ class _FormWidgetState extends State<_FormWidget> {
 
   @override
   void dispose() {
-    _incomeController.dispose();
-    _expenseController.dispose();
-    _limitController.dispose();
-    _categoryController.dispose();
+    _menuController.dispose();
+    _priceController.dispose();
+    _methodController.dispose();
     _dateController.dispose();
     super.dispose();
   }
@@ -464,10 +342,9 @@ class _FormWidgetState extends State<_FormWidget> {
   void didUpdateWidget(covariant _FormWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.selectedPeriod != widget.selectedPeriod) {
-      _incomeController.clear();
-      _expenseController.clear();
-      _limitController.clear();
-      _categoryController.clear();
+      _menuController.clear();
+      _priceController.clear();
+      _methodController.clear();
       _dateController.clear();
     }
   }
@@ -487,17 +364,15 @@ class _FormWidgetState extends State<_FormWidget> {
               const SizedBox(height: 40),
               if (widget.selectedPeriod == 'Pemasukan')
                 _CustomTextField(
-                  controller: _incomeController,
+                  controller: _menuController,
                   label: 'Menu',
                   leftIconPath: ImageConstant.imgIn1,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [currencyInputFormatter()],
                   // inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 ),
                 const SizedBox(height: 20),
                 _CustomTextField(
-                  controller: _expenseController,
-                  label: 'Jumlah',
+                  controller: _priceController,
+                  label: 'Price',
                   leftIconPath: ImageConstant.imgIn1,
                   keyboardType: TextInputType.number,
                   inputFormatters: [currencyInputFormatter()],
@@ -505,7 +380,7 @@ class _FormWidgetState extends State<_FormWidget> {
                 ),
                 const SizedBox(height: 20),
                 _CustomTextField(
-                  controller: _categoryController,
+                  controller: _methodController,
                   label: 'Cash/Card',
                   leftIconPath: ImageConstant.imgIn2,
                 ),

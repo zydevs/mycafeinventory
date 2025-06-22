@@ -17,9 +17,9 @@ class ImageConstant {
   static String imgNavTransaction = '$imagePath/Transactions.svg';
   static String imgNavTransactionOn = '$imagePath/Transactions-on.svg';
   static String imgNavChatbot = '$imagePath/Chatbot.svg';
-  static String imgNavAnalysis = '$imagePath/TransInventory.svg';
+  static String imgNavAnalysis = '$imagePath/TIicon.png';
   static String imgNavAnalysisOn = '$imagePath/TransInventory-On.svg';
-  static String imgNavProfile = '$imagePath/InventoryManagement.svg';
+  static String imgNavProfile = '$imagePath/IMicon.png';
   static String imgNavProfilenOn = '$imagePath/InventoryManagement-On.svg';
 
   // Img Home

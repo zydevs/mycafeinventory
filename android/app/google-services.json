@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "288120395867",
-    "project_id": "acisku-bc32f",
-    "storage_bucket": "acisku-bc32f.firebasestorage.app"
+    "project_number": "677223987423",
+    "project_id": "mciapp-5adfb",
+    "storage_bucket": "mciapp-5adfb.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:288120395867:android:2b45ca426d84d48f74077e",
+        "mobilesdk_app_id": "1:677223987423:android:2a13bfff6d78f08366116a",
         "android_client_info": {
           "package_name": "com.example.acisku"
         }
@@ -15,7 +15,26 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyA_nRr0Ju5YoT9wWEWARpe_8gJpR1xbvyE"
+          "current_key": "AIzaSyCjjAVYWEXU3iA8hyVn6XQURPbjyz9PceY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:677223987423:android:5990871e23103f7666116a",
+        "android_client_info": {
+          "package_name": "com.mciapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCjjAVYWEXU3iA8hyVn6XQURPbjyz9PceY"
         }
       ],
       "services": {
