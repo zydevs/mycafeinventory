@@ -1,4 +1,6 @@
 import 'package:mycafeinventory/routes/app_routes.dart';
+import 'package:mycafeinventory/services/sales_service.dart';
+import 'package:mycafeinventory/services/user_service.dart';
 import 'package:mycafeinventory/widgets/custom_image_view.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -44,13 +46,16 @@ class InvManagerScreen extends StatefulWidget {
 }
 
 class _InvManagerScreenState extends State<InvManagerScreen> {
-
+  // Inisiasi UID secara langsung
+  final String _currentUserId = 'Ft1UBlWgyvuFbfnVZ9od';
+  final UserService _userService = UserService();
+  final SalesService _salesService = SalesService();
   double _balance = 0;
   double _totalSpending = 0;
+  double _totalIncome = 0;
 
   void signUserOut(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
-
     // Navigasi ke login screen, hapus semua riwayat halaman
     Navigator.pushNamed(context, AppRoutes.loginScreen);
   }
@@ -58,11 +63,11 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchFinancialData();
+    _fetchFinancialData(_currentUserId);
   }
 
-  Future<void> _fetchFinancialData() async {
-    final userDoc = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od'); // pakai UID tetap
+  Future<void> _fetchFinancialData(String userId) async {
+    final userDoc = FirebaseFirestore.instance.collection('users').doc(userId);
 
     try {
       final saleSnapshot = await userDoc.collection('sale').get();
@@ -76,13 +81,18 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
         return sum + (doc.data()['total'] ?? 0).toDouble();
       });
 
+      double totalSales = await _salesService.getTotalSales(userId: userId);
+
       setState(() {
         _balance = totalSale;
         _totalSpending = totalInventory;
+        _totalIncome = totalSales;
       });
-
     } catch (e) {
       print('Gagal mengambil data header: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memuat data keuangan: ${e.toString()}')),
+      );
     }
   }
 
@@ -98,8 +108,7 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
             child: Container(
               color: const Color(0xFF00D09E),
               width: double.infinity,
-              padding: const EdgeInsets.only(
-                  top: 50, left: 30, right: 30, bottom: 30),
+              padding: const EdgeInsets.only(top: 50, left: 30, right: 30, bottom: 30),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -132,8 +141,7 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
                         onTap: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
-                                builder: (context) => NotificationScreen()),
+                            MaterialPageRoute(builder: (context) => NotificationScreen()),
                           );
                         },
                         child: CustomImageView(
@@ -191,11 +199,7 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            NumberFormat.currency(
-                                    locale: 'id_ID',
-                                    symbol: 'Rp ',
-                                    decimalDigits: 0)
-                                .format(_balance),
+                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_totalIncome),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -231,11 +235,7 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            NumberFormat.currency(
-                                    locale: 'id_ID',
-                                    symbol: 'Rp ',
-                                    decimalDigits: 0)
-                                .format(_totalSpending),
+                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_totalSpending),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -253,8 +253,8 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
           ),
 
           // Body konten lainnya
-          const Expanded(
-            child: _BodyWidget(),
+          Expanded(
+            child: _BodyWidget(userId: _currentUserId), // Meneruskan userId ke _BodyWidget
           ),
         ],
       ),
@@ -263,7 +263,9 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
 }
 
 class _BodyWidget extends StatefulWidget {
-  const _BodyWidget({Key? key}) : super(key: key);
+  final String userId; // Tambahkan properti userId
+
+  const _BodyWidget({Key? key, required this.userId}) : super(key: key); // Perbarui konstruktor
 
   @override
   State<_BodyWidget> createState() => _BodyWidgetState();
@@ -271,81 +273,59 @@ class _BodyWidget extends StatefulWidget {
 
 // Body
 class _BodyWidgetState extends State<_BodyWidget> {
-  String _selectedPeriod = 'Re-Stok'; // default selected switch
-  List<Map<String, dynamic>> _transactions = [];
+  // Remove _selectedPeriod as switch button is removed
+  // String _selectedPeriod = 'Re-Stok'; // default selected switch
+  List<Map<String, dynamic>> _inventoryList = []; // Ganti _transactions menjadi _inventoryList
 
   @override
   void initState() {
     super.initState();
-    _fetchFinancialData();
+    _fetchAggregatedInventory(); // Mengganti _fetchInventoryTransactions
   }
 
-  Future<void> _fetchFinancialData() async {
-    final userDoc = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od');
+  Future<void> _fetchAggregatedInventory() async {
+    final userDoc = FirebaseFirestore.instance.collection('users').doc(widget.userId);
 
     try {
       final inventorySnapshot = await userDoc.collection('inventory').get();
 
-      final List<Map<String, dynamic>> transactions = [];
+      // Gunakan Map untuk mengakumulasi stok berdasarkan nama inventaris
+      Map<String, Map<String, dynamic>> aggregatedData = {};
 
       for (var doc in inventorySnapshot.docs) {
         final data = doc.data();
-        final stok = data['stokInv']?.toString() ?? '-';
-        final unit = data['unitInv']?.toString() ?? '';
-        final stokLabel = '$stok $unit'; // ini akan jadi amount
-        final total = data['total'] ?? 0;
-        final plusTotal = NumberFormat.currency(
-          locale: 'id_ID',
-          symbol: 'Rp ',
-          decimalDigits: 0,
-        ).format(total); // ini akan jadi type
+        final nameInv = data['nameInv'] ?? 'Unknown Item';
+        final stokInv = (data['stokInv'] as num?)?.toDouble() ?? 0.0;
+        final unitInv = data['unitInv'] ?? '';
 
-        final Timestamp? timestamp = data['date'];
-        String dateLabel = '-';
-
-        if (timestamp != null) {
-          final dateTime = timestamp.toDate();
-          dateLabel = DateFormat('dd MMM yyyy').format(dateTime);
+        if (nameInv.isNotEmpty) {
+          if (aggregatedData.containsKey(nameInv)) {
+            // Jika nama inventaris sudah ada, tambahkan stoknya
+            aggregatedData[nameInv]!['stok'] = (aggregatedData[nameInv]!['stok'] ?? 0.0) + stokInv;
+            // Pastikan unitnya konsisten (ambil unit dari entri terakhir)
+            aggregatedData[nameInv]!['unit'] = unitInv;
+          } else {
+            // Jika nama inventaris belum ada, tambahkan sebagai entri baru
+            aggregatedData[nameInv] = {
+              'name': nameInv,
+              'stok': stokInv,
+              'unit': unitInv,
+            };
+          }
         }
-
-        transactions.add({
-          'title': data['nameInv'] ?? 'Pengeluaran',
-          'date': dateLabel,
-          'amount': stokLabel,   // pindah stok ke kolom "jumlah"
-          'type': plusTotal,     // pindah total ke kolom "type" dengan format +Rp
-          'category': 'Re-Stok',
-        });
       }
 
-      // Dummy untuk "Terpakai"
-      final List<String> bahanTetap = [
-        'biji kopi',
-        'susu UHT',
-        'gula aren cair',
-        'es krim',
-        'sirup karamel',
-        'coklat bubuk',
-        'air',
-        'sirup vanilla',
-        'air panas',
-        'lemon',
-      ];
-
-      for (var bahan in bahanTetap) {
-        transactions.add({
-          'title': bahan,
-          'date': '-',
-          'amount': 0,
-          'type': '1 g', // atau satuan lain sesuai data nanti
-          'category': 'Terpakai',
-        });
-      }
-
+      // Konversi aggregatedData menjadi List untuk ditampilkan
       setState(() {
-        _transactions = transactions;
+        _inventoryList = aggregatedData.values.toList();
+        // Urutkan berdasarkan nama inventaris
+        _inventoryList.sort((a, b) => a['name'].compareTo(b['name']));
       });
     } catch (e) {
-      print('Gagal mengambil data: $e');
+      print('Gagal mengambil data inventaris akumulatif: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memuat data inventaris: ${e.toString()}')),
+      );
     }
   }
 
@@ -359,22 +339,19 @@ class _BodyWidgetState extends State<_BodyWidget> {
           SingleChildScrollView(
             child: Column(
               children: [
-                const SizedBox(height: 24),
-                _buildSwitchButtonGroup(),
-                const SizedBox(height: 24),
+                // _buildSwitchButtonGroup() dihapus
+                const SizedBox(height: 24), // Memberikan jarak di bagian atas
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 30.0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: _transactions
-                            .where((tx) => tx['category'] == _selectedPeriod)
-                            .isEmpty
+                    children: _inventoryList.isEmpty
                         ? [
-                            Center(
+                            const Center(
                               child: Text(
-                                "Data $_selectedPeriod belum tersedia.",
-                                style: const TextStyle(
+                                "Data inventaris belum tersedia.",
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontFamily: 'Poppins',
                                   color: Color(0xFF00D09E),
@@ -382,26 +359,16 @@ class _BodyWidgetState extends State<_BodyWidget> {
                               ),
                             ),
                           ]
-                        : _transactions
-                            .where((tx) => tx['category'] == _selectedPeriod)
-                            .map((tx) {
-                              final isRestok = tx['category'] == 'Re-Stok';
-                              final amountFormatted = tx['amount'].toString();
-                              final typeLabel = tx['type'].toString();
-
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 14.0),
-                                child: _buildTransactionRow(
-                                  title: tx['title'],
-                                  date: tx['date'],
-                                  type: typeLabel, // akan menampilkan total dengan +Rp
-                                  amount: amountFormatted, // akan menampilkan satuan stok
-                                  amountColor: isRestok
-                                      ? const Color(0xFF0068FF)
-                                      : const Color(0xFFFF3B3B),
-                                ),
-                              );
-                            }).toList(),
+                        : _inventoryList.map((item) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 14.0),
+                              child: _buildInventoryRow(
+                                title: item['name'],
+                                stok: item['stok'],
+                                unit: item['unit'],
+                              ),
+                            );
+                          }).toList(),
                   ),
                 ),
               ],
@@ -412,16 +379,14 @@ class _BodyWidgetState extends State<_BodyWidget> {
     );
   }
 
-  Widget _buildTransactionRow({
+  // Widget baru untuk menampilkan baris inventaris akumulatif
+  Widget _buildInventoryRow({
     required String title,
-    required String date,
-    required String type,
-    required String amount,
-    required Color amountColor,
+    required double stok,
+    required String unit,
   }) {
-    final String iconPath = _selectedPeriod == 'Re-Stok'
-        ? ImageConstant.imgN2
-        : ImageConstant.imgN3;
+    final String iconPath = ImageConstant.imgN2; // Menggunakan ikon Re-Stok karena ini tentang stok yang tersedia
+    final String stockLabel = '${stok.toStringAsFixed(0)} $unit'; // Format stok
 
     return Container(
       width: 400,
@@ -443,36 +408,30 @@ class _BodyWidgetState extends State<_BodyWidget> {
             ),
           ),
           const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Color(0xFF052224),
-                  fontSize: 12,
-                  fontFamily: 'Poppins',
-                  fontWeight: FontWeight.w600,
+          Expanded( // Expanded agar judul bisa mengambil sisa ruang
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF052224),
+                    fontSize: 12,
+                    fontFamily: 'Poppins',
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                date,
-                style: const TextStyle(
-                  color: Color(0xFF052224),
-                  fontSize: 12,
-                  fontFamily: 'Poppins',
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+                // Tidak ada lagi tanggal di sini
+              ],
+            ),
           ),
           const SizedBox(width: 18),
-          Container(width: 1, height: 40, color: const Color(0xFF00D09E)),
+          Container(width: 1, height: 40, color: const Color(0xFF00D09E)), // Divider
           const SizedBox(width: 18),
+          // Menampilkan sisa stok
           Text(
-            type,
+            'Sisa Stok', // Label untuk sisa stok
             style: const TextStyle(
               color: Color(0xFF052224),
               fontSize: 13,
@@ -482,14 +441,14 @@ class _BodyWidgetState extends State<_BodyWidget> {
             ),
           ),
           const SizedBox(width: 18),
-          Container(width: 1, height: 40, color: const Color(0xFF00D09E)),
+          Container(width: 1, height: 40, color: const Color(0xFF00D09E)), // Divider
           const SizedBox(width: 18),
-          Expanded(
+          Expanded( // Expanded agar stok bisa mengambil sisa ruang dan rata kanan
             child: Text(
-              amount,
+              stockLabel,
               textAlign: TextAlign.end,
-              style: TextStyle(
-                color: amountColor,
+              style: const TextStyle(
+                color: Color(0xFF0068FF), // Warna biru untuk sisa stok
                 fontSize: 15,
                 fontFamily: 'Poppins',
                 fontWeight: FontWeight.w600,
@@ -501,51 +460,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
     );
   }
 
-  Widget _buildSwitchButtonGroup() {
-    final List<String> options = ['Re-Stok', 'Terpakai'];
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      width: 400,
-      height: 50,
-      decoration: BoxDecoration(
-        color: const Color(0xFFDFF7E2),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: options.map((option) {
-          final bool isSelected = _selectedPeriod == option;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedPeriod = option;
-                });
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  color:
-                      isSelected ? const Color(0xFF00D09E) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  option,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: isSelected ? Colors.white : const Color(0xFF00D09E),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
+  // _buildSwitchButtonGroup() dihapus
 }
 
 class BottomConcaveClipper extends CustomClipper<Path> {
@@ -554,9 +469,9 @@ class BottomConcaveClipper extends CustomClipper<Path> {
     const double curveHeight = 70.0;
 
     Path path = Path();
-    path.moveTo(0, 0); // kiri atas
+    path.moveTo(0, 0); // top left
 
-    // Turun ke bawah sampai cekungan kiri
+    // Line down to the start of the left concave curve
     path.lineTo(0, size.height);
     path.quadraticBezierTo(
       0,
@@ -565,10 +480,10 @@ class BottomConcaveClipper extends CustomClipper<Path> {
       size.height - curveHeight,
     );
 
-    // Garis lurus tengah
+    // Straight line in the middle
     path.lineTo(size.width - curveHeight, size.height - curveHeight);
 
-    // Cekungan kanan
+    // Right concave curve
     path.quadraticBezierTo(
       size.width,
       size.height - curveHeight,
@@ -576,7 +491,7 @@ class BottomConcaveClipper extends CustomClipper<Path> {
       size.height,
     );
 
-    // Kembali ke atas
+    // Line back up to top right
     path.lineTo(size.width, 0);
     path.close();
 
@@ -587,23 +502,4 @@ class BottomConcaveClipper extends CustomClipper<Path> {
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
-class GreenRoundedCard extends StatelessWidget {
-  final Widget child;
-
-  const GreenRoundedCard({Key? key, required this.child}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 400,
-      height: 150,
-      decoration: ShapeDecoration(
-        color: const Color(0xFF00D09E),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-      child: child,
-    );
-  }
-}
+// GreenRoundedCard dihapus karena tidak digunakan lagi

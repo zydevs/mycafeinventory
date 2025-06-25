@@ -1,3 +1,5 @@
+// lib/screens/income_screen.dart
+
 import 'package:mycafeinventory/routes/app_routes.dart';
 import 'package:mycafeinventory/screens/notification_screen.dart';
 import 'package:mycafeinventory/utils/notif_service.dart';
@@ -11,7 +13,11 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:mycafeinventory/services/inventory_service.dart'; // Import InventoryService
+import 'package:mycafeinventory/services/user_service.dart'; // Import UserService
+import 'package:mycafeinventory/services/sales_service.dart'; // Import SalesService
 
+// MyApp is typically in main.dart, but included here for completeness of context
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
 
@@ -31,7 +37,7 @@ class MyApp extends StatelessWidget {
       home: const SafeArea(
         child: Center(
           child: SizedBox(
-            width: 480,
+            width: 480, // Adjust width as needed for responsive design
             child: IncomeScreen(),
           ),
         ),
@@ -40,8 +46,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// main class
-// ignore: must_be_immutable
+// Main class IncomeScreen
 class IncomeScreen extends StatefulWidget {
   const IncomeScreen({Key? key}) : super(key: key);
 
@@ -50,59 +55,77 @@ class IncomeScreen extends StatefulWidget {
 }
 
 class _IncomeScreenState extends State<IncomeScreen> {
-  String _selectedPeriod = 'Pemasukan'; // default
+  String _selectedPeriod = 'Pemasukan'; // default period
 
+  // --- START PERUBAHAN: UID diinisiasi langsung ---
+  final String _currentUserId = 'Ft1UBlWgyvuFbfnVZ9od'; // UID yang diinisiasi langsung
+  // --- AKHIR PERUBAHAN ---
 
-  void signUserOut(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-
-    // Navigasi ke login screen, hapus semua riwayat halaman
-    Navigator.pushNamed(context, AppRoutes.loginScreen);
-  }
+  final UserService _userService = UserService();
+  final SalesService _salesService = SalesService();
 
   double _balance = 0;
-  double _totalSpending = 0;
+  double _totalSpending = 0; // Represents total inventory spending
   double _totalIncome = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchFinancialData();
+    // Langsung panggil fetchFinancialData dengan UID yang sudah diinisiasi
+    _fetchFinancialData(_currentUserId);
   }
 
-  Future<void> _fetchFinancialData() async {
-    final userDoc = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od'); // pakai UID tetap
-
+  // Fetch financial data (balance and spending) for the given userId
+  Future<void> _fetchFinancialData(String userId) async {
     try {
-      final saleSnapshot = await userDoc.collection('sale').get();
-      final inventorySnapshot = await userDoc.collection('inventory').get();
+      // Fetch balance from user profile (assuming it's stored directly under user document)
+      Map<String, dynamic>? userProfile = await _userService.getUserProfile(userId: userId);
+      double userBalance = (userProfile?['balance'] as num?)?.toDouble() ?? 0.0;
+      print('User Balance: $userBalance'); // Debug print
 
-      double totalSale = saleSnapshot.docs.fold(0.0, (sum, doc) {
-        return sum + (doc.data()['price'] ?? 0).toDouble();
-      });
+      // Fetch total sales (income) using SalesService
+      double totalSales = await _salesService.getTotalSales(userId: userId);
+      print('Total Sales (Income): $totalSales'); // Debug print
 
-      double totalInventory = inventorySnapshot.docs.fold(0.0, (sum, doc) {
-        return sum + (doc.data()['total'] ?? 0).toDouble();
+      // Fetch total inventory spending (assuming 'total' in inventory collection represents cost)
+      final inventorySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('inventory') // Assuming 'inventory' stores purchases/spending
+          .get();
+
+      double totalInventorySpending = inventorySnapshot.docs.fold(0.0, (sum, doc) {
+        return sum + (doc.data()['total'] as num? ?? 0).toDouble(); // Assuming 'total' is spending
       });
+      print('Total Inventory Spending: $totalInventorySpending'); // Debug print
 
       setState(() {
-        _balance = totalSale;
-        _totalSpending = totalInventory;
+        _balance = userBalance;
+        _totalIncome = totalSales;
+        _totalSpending = totalInventorySpending;
       });
-
     } catch (e) {
-      print('Gagal mengambil data header: $e');
+      print('Gagal mengambil data keuangan: $e'); // Debug print
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal mengambil data keuangan: ${e.toString()}')),
+      );
     }
   }
 
-  // Header
+  // Function to sign out the user
+  void signUserOut(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    // Navigate to login screen, clear all page history
+    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.loginScreen, (route) => false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-     backgroundColor: const Color.fromARGB(255, 255, 255, 255),
+      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
       body: Column(
         children: [
-          // Bagian header yang di-clip
+          // Header section
           ClipPath(
             clipper: BottomConcaveClipper(),
             child: Container(
@@ -113,7 +136,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Row atas (logo, teks, notifikasi)
+                  // Top row (logo, text, notification, profile)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -136,7 +159,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
                           ),
                         ),
                       ),
-                      // Notif
+                      // Notif Icon
                       GestureDetector(
                         onTap: () {
                           Navigator.push(
@@ -150,34 +173,24 @@ class _IncomeScreenState extends State<IncomeScreen> {
                           width: 30,
                         ),
                       ),
-
-                      // Logout
+                      const SizedBox(width: 10), // Spacing between icons
+                      // Logout/Profile Icon
                       GestureDetector(
                         onTap: () => signUserOut(context),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            CustomImageView(
-                              imagePath: ImageConstant.imgProfile4,
-                              height: 57,
-                              width: 53,
-                            ),                                
-                          ],
+                        child: CustomImageView(
+                          imagePath: ImageConstant.imgProfile4,
+                          height: 57,
+                          width: 53,
                         ),
                       ),
-
                     ],
                   ),
-
                   const SizedBox(height: 25),
-
-                  // Info Saldo dan Pengeluaran
+                  // Balance and Spending Info
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Saldo
+                      // Total Penjualan (Income)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -200,7 +213,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_balance),
+                            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(_totalIncome),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -209,11 +222,9 @@ class _IncomeScreenState extends State<IncomeScreen> {
                           ),
                         ],
                       ),
-
-                      // Garis pemisah
+                      // Divider
                       Container(width: 2, height: 50, color: Colors.white),
-
-                      // Pengeluaran
+                      // Total Pengeluaran (Spending)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -247,91 +258,165 @@ class _IncomeScreenState extends State<IncomeScreen> {
                       ),
                     ],
                   ),
-
                   SizedBox(height: 70),
                 ],
               ),
             ),
           ),
-
-          // Body selanjutnya (widget lainnya)
+          // Body (form widget) - always pass the hardcoded userId
           Expanded(
-             child: _FormWidget(selectedPeriod: _selectedPeriod),
+            child: _FormWidget(
+              selectedPeriod: _selectedPeriod,
+              userId: _currentUserId, // Pass the hardcoded UID
+            ),
           ),
         ],
       ),
     );
   }
-
 }
 
-// class body
+// _FormWidget class
 class _FormWidget extends StatefulWidget {
   final String selectedPeriod;
+  final String userId; // userId is now guaranteed to be available
 
-  const _FormWidget({Key? key, required this.selectedPeriod}) : super(key: key);
+  const _FormWidget({
+    Key? key,
+    required this.selectedPeriod,
+    required this.userId,
+  }) : super(key: key);
 
   @override
   State<_FormWidget> createState() => _FormWidgetState();
 }
 
-  // Form Widget
-  class _FormWidgetState extends State<_FormWidget> {
-    final _menuController = TextEditingController();
-    final _priceController = TextEditingController();
-    final _methodController = TextEditingController();
-    final _dateController = TextEditingController();
-    final _currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+class _FormWidgetState extends State<_FormWidget> {
+  String? _selectedCoffeeMenu; // To store selected coffee name
+  final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _methodController = TextEditingController();
+  final TextEditingController _dateController = TextEditingController();
+  final NumberFormat _currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
+  List<Map<String, dynamic>> _coffeeMenus = []; // List to store fetched coffee menus and their prices
+
+  final InventoryService _inventoryService = InventoryService(); // Instantiate InventoryService
+  final List<String> _paymentMethods = ['Cash', 'Card'];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCoffeeMenus(); // Fetch coffee menus when the widget initializes
+    _methodController.text = _paymentMethods.first; 
+  }
+
+  // Fetch coffee menus and their prices from Firebase 'recipes' collection
+  Future<void> _fetchCoffeeMenus() async {
+    print('Fetching menus for user: ${widget.userId}'); // Debug print
+    try {
+      QuerySnapshot snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .collection('recipes') // Pastikan path ini benar
+          .get();
+
+      print('Snapshot docs count: ${snapshot.docs.length}'); // Debug print: Cek apakah ada dokumen ditemukan
+
+      List<Map<String, dynamic>> fetchedMenus = [];
+      for (var doc in snapshot.docs) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>; // Explicit casting
+        print('Processing doc: ${doc.id}, data: $data'); // Debug print: Lihat data apa yang dibaca
+
+        // Pastikan field 'price' ada dalam dokumen resep
+        if (data.containsKey('price')) {
+          fetchedMenus.add({
+            'name': doc.id, // ID dokumen adalah nama kopi
+            'price': (data['price'] as num?)?.toDouble() ?? 0.0, // Ambil harga
+          });
+        } else {
+          print('Warning: Dokumen ${doc.id} di koleksi recipes tidak memiliki field "price".');
+        }
+      }
+
+      setState(() {
+        _coffeeMenus = fetchedMenus;
+        print('Coffee menus after fetch: $_coffeeMenus'); // Debug print: Verifikasi list terisi
+        if (_coffeeMenus.isNotEmpty) {
+          _selectedCoffeeMenu = _coffeeMenus.first['name']; // Pilih item pertama
+          _priceController.text = _currencyFormatter.format(_coffeeMenus.first['price']); // Set harganya
+          print('Selected coffee menu (initially): $_selectedCoffeeMenu, Price: ${_priceController.text}'); // Debug print
+        } else {
+          _selectedCoffeeMenu = null; // Pastikan null jika tidak ada menu
+          _priceController.clear();
+          print('Tidak ada menu kopi ditemukan, dropdown akan kosong.'); // Debug print
+        }
+      });
+    } catch (e) {
+      print('Error fetching coffee menus: $e'); // Debug print
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memuat menu kopi: ${e.toString()}')),
+      );
+    }
+  }
+
+  // Save transaction and deduct stock
   Future<void> saveTransaction() async {
-    // Ganti UID di sini langsung
-    final userRef = FirebaseFirestore.instance.collection('users').doc('Ft1UBlWgyvuFbfnVZ9od');
+    if (_selectedCoffeeMenu == null) {
+      Get.snackbar(
+        "Error",
+        "Silakan pilih menu kopi terlebih dahulu.",
+        colorText: Colors.white,
+        backgroundColor: Colors.red,
+      );
+      return;
+    }
 
     try {
       final rawPrice = _priceController.text.replaceAll(RegExp(r'[^0-9]'), '');
       final price = double.tryParse(rawPrice) ?? 0.0;
-      final menu = _menuController.text.trim();
       final method = _methodController.text.trim();
       final date = _dateController.text.isNotEmpty
           ? DateTime.parse(_dateController.text)
           : DateTime.now();
 
-      // Simpan ke subkoleksi sale
-      await userRef.collection('sale').add({
-        'menu': menu,
-        'price': price,
-        'method': method,
-        'date': Timestamp.fromDate(date),
-      });
+      // Use InventoryService to process the order, which also handles sale recording
+      await _inventoryService.processCoffeeOrder(
+        coffeeName: _selectedCoffeeMenu!,
+        userId: widget.userId,
+        coffeePrice: price,
+        paymentMethod: method,
+      );
 
-      // Update balance user
-      await userRef.set({
-        'balance': FieldValue.increment(price),
-      }, SetOptions(merge: true));
+      // Refresh financial data in the parent widget after successful transaction
+      if (context.findAncestorStateOfType<_IncomeScreenState>() != null) {
+        context.findAncestorStateOfType<_IncomeScreenState>()!._fetchFinancialData(widget.userId);
+      }
 
-      // Reset form
-      _menuController.clear();
-      _priceController.clear();
+      // Reset form (clear method, date)
       _methodController.clear();
       _dateController.clear();
+      // Keep _selectedCoffeeMenu and _priceController.text as they are (last selected menu)
+      // or reset them if desired (e.g., _selectedCoffeeMenu = null; _priceController.clear();)
 
       Get.snackbar(
-        "Penjualan",
-        "Data berhasil disimpan",
+        "Penjualan Berhasil",
+        "Data berhasil disimpan dan stok diperbarui!",
         colorText: Colors.white,
-        backgroundColor: Color(0xFF00D09E),
+        backgroundColor: const Color(0xFF00D09E),
       );
     } catch (e) {
-      print('Gagal menyimpan data: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Terjadi kesalahan saat menyimpan data.')),
+      print('Gagal menyimpan data atau mengurangi stok: $e'); // Debug print
+      Get.snackbar(
+        "Terjadi Kesalahan",
+        'Gagal memproses pesanan: ${e.toString()}',
+        colorText: Colors.white,
+        backgroundColor: Colors.red,
       );
     }
   }
 
   @override
   void dispose() {
-    _menuController.dispose();
     _priceController.dispose();
     _methodController.dispose();
     _dateController.dispose();
@@ -341,11 +426,13 @@ class _FormWidget extends StatefulWidget {
   @override
   void didUpdateWidget(covariant _FormWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedPeriod != widget.selectedPeriod) {
-      _menuController.clear();
-      _priceController.clear();
+    // Re-fetch menus only if userId changes (which is unlikely with hardcoded UID, but good practice)
+    if (oldWidget.userId != widget.userId) {
       _methodController.clear();
       _dateController.clear();
+      _selectedCoffeeMenu = null; // Clear selected menu
+      _priceController.clear(); // Clear price
+      _fetchCoffeeMenus(); // Re-fetch menus for the new user
     }
   }
 
@@ -362,29 +449,63 @@ class _FormWidget extends StatefulWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 40),
-              if (widget.selectedPeriod == 'Pemasukan')
-                _CustomTextField(
-                  controller: _menuController,
-                  label: 'Menu',
+              if (widget.selectedPeriod == 'Pemasukan') ...[
+                // Dropdown for Coffee Menu
+                _CustomDropdownField(
+                  label: 'Menu Kopi',
                   leftIconPath: ImageConstant.imgIn1,
-                  // inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  value: _selectedCoffeeMenu,
+                  items: _coffeeMenus.map((menu) {
+                    return DropdownMenuItem<String>(
+                      value: menu['name'],
+                      child: Text(menu['name']),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      _selectedCoffeeMenu = newValue;
+                      // Find the selected coffee's price and update the price controller
+                      final selectedMenuData = _coffeeMenus.firstWhere(
+                          (menu) => menu['name'] == newValue,
+                          orElse: () => {'price': 0.0});
+                      _priceController.text = _currencyFormatter.format(selectedMenuData['price']);
+                    });
+                  },
                 ),
                 const SizedBox(height: 20),
+                // Price field (read-only)
                 _CustomTextField(
                   controller: _priceController,
                   label: 'Price',
                   leftIconPath: ImageConstant.imgIn1,
                   keyboardType: TextInputType.number,
                   inputFormatters: [currencyInputFormatter()],
-                  // inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  readOnly: true, // Make price field read-only
                 ),
                 const SizedBox(height: 20),
-                _CustomTextField(
-                  controller: _methodController,
+                // Method field
+                 _CustomDropdownField(
                   label: 'Cash/Card',
                   leftIconPath: ImageConstant.imgIn2,
+                  value: _methodController.text.isEmpty
+                      ? null
+                      : _methodController.text, // Menggunakan nilai dari controller
+                  items: _paymentMethods.map((String method) {
+                    return DropdownMenuItem<String>(
+                      value: method,
+                      child: Text(method),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      if (newValue != null) {
+                        _methodController.text = newValue; // Perbarui controller dengan nilai yang dipilih
+                      }
+                    });
+                  },
                 ),
                 const SizedBox(height: 20),
+                // Date field
                 _CustomTextField(
                   controller: _dateController,
                   label: 'Tanggal',
@@ -405,9 +526,8 @@ class _FormWidget extends StatefulWidget {
                     }
                   },
                 ),
-
-                const SizedBox(height: 25),
-              
+              ],
+              const SizedBox(height: 25),
               _buildButton(
                 label: 'Simpan',
                 onPressed: () {
@@ -422,44 +542,12 @@ class _FormWidget extends StatefulWidget {
     );
   }
 
-  Widget _buildButton({
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return SizedBox(
-      width: 400,
-      height: 50,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF00D09E),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-
+  // Helper for currency formatting
   TextInputFormatter currencyInputFormatter() {
     return TextInputFormatter.withFunction((oldValue, newValue) {
-      // Hapus semua karakter non-digit
       String newText = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-
-      // Cegah string kosong atau 0
       if (newText.isEmpty) return newValue.copyWith(text: '');
-
-      // Format ulang ke dalam format uang
       final formatted = _currencyFormatter.format(int.parse(newText));
-
       return TextEditingValue(
         text: formatted,
         selection: TextSelection.collapsed(offset: formatted.length),
@@ -468,6 +556,7 @@ class _FormWidget extends StatefulWidget {
   }
 }
 
+// Reusable Custom TextField Widget (updated to fit dropdown)
 class _CustomTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -545,16 +634,120 @@ class _CustomTextField extends StatelessWidget {
   }
 }
 
-// class clip top
+// New Custom Dropdown Field Widget
+class _CustomDropdownField extends StatelessWidget {
+  final String label;
+  final String? leftIconPath;
+  final String? value;
+  final List<DropdownMenuItem<String>> items;
+  final ValueChanged<String?> onChanged;
+
+  const _CustomDropdownField({
+    Key? key,
+    required this.label,
+    this.leftIconPath,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 400,
+      height: 50,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF00D09E)),
+      ),
+      child: Stack(
+        children: [
+          if (leftIconPath != null)
+            Positioned(
+              left: 16,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: CustomImageView(
+                  imagePath: leftIconPath!,
+                  width: 50,
+                  height: 50,
+                ),
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.only(
+              left: leftIconPath != null ? 48.0 : 16.0,
+              right: 16.0, // Add right padding for dropdown icon
+            ),
+            child: DropdownButtonFormField<String>(
+              value: value,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: label,
+                hintStyle: const TextStyle(
+                  color: Color(0xFF00D09E),
+                  fontSize: 16,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              dropdownColor: Colors.white, // Background color of the dropdown list
+              style: const TextStyle(
+                color: Color(0xFF00D09E),
+                fontSize: 16,
+              ),
+              items: items,
+              onChanged: onChanged,
+              isExpanded: true, // Make dropdown take full width
+              iconEnabledColor: const Color(0xFF00D09E), // Color of the dropdown icon
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Reusable Button Widget
+Widget _buildButton({
+  required String label,
+  required VoidCallback onPressed,
+}) {
+  return SizedBox(
+    width: 400,
+    height: 50,
+    child: ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF00D09E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+    ),
+  );
+}
+
+
+// Custom Clipper for the header (no changes here)
 class BottomConcaveClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
     const double curveHeight = 70.0;
 
     Path path = Path();
-    path.moveTo(0, 0); // kiri atas
+    path.moveTo(0, 0); // top left
 
-    // Turun ke bawah sampai cekungan kiri
+    // Line down to the start of the left concave curve
     path.lineTo(0, size.height);
     path.quadraticBezierTo(
       0,
@@ -563,10 +756,10 @@ class BottomConcaveClipper extends CustomClipper<Path> {
       size.height - curveHeight,
     );
 
-    // Garis lurus tengah
+    // Straight line in the middle
     path.lineTo(size.width - curveHeight, size.height - curveHeight);
 
-    // Cekungan kanan
+    // Right concave curve
     path.quadraticBezierTo(
       size.width,
       size.height - curveHeight,
@@ -574,7 +767,7 @@ class BottomConcaveClipper extends CustomClipper<Path> {
       size.height,
     );
 
-    // Kembali ke atas
+    // Line back up to top right
     path.lineTo(size.width, 0);
     path.close();
 
