@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:mycafeinventory/utils/image_constant.dart';
+import 'package:google_generative_ai/google_generative_ai.dart'; // Import paket Gemini
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -24,7 +25,7 @@ class MyApp extends StatelessWidget {
       home: const SafeArea(
         child: Center(
           child: SizedBox(
-            width: 480,
+            width: 480, // Sesuaikan lebar sesuai kebutuhan desain Anda
             child: ChatbotScreen(),
           ),
         ),
@@ -40,7 +41,6 @@ class ChatbotScreen extends StatefulWidget {
 
   @override
   State<ChatbotScreen> createState() => _ChatbotScreenState();
-  
 }
 
 class _ChatbotScreenState extends State<ChatbotScreen> {
@@ -128,7 +128,24 @@ class _BodyWidgetState extends State<_BodyWidget> {
   final List<Map<String, dynamic>> _chatMessages = [];
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
+  bool _isLoading = false; // State untuk loading indicator
+
+  // API Key Gemini yang telah diperbarui
+  final String _geminiApiKey = "AIzaSyAEq89rbegEVk1-g3XCHwRA21viZL_8UqQ"; 
+  late final GenerativeModel _model;
+
+  @override
+  void initState() {
+    super.initState();
+    // Inisialisasi model Gemini
+    _model = GenerativeModel(model: 'gemini-2.0-flash', apiKey: _geminiApiKey);
+    // Pesan sambutan awal dari bot
+    _chatMessages.add({
+      'text': 'Halo! Saya asisten kafe Anda. Apa yang bisa saya bantu terkait keuangan dan inventaris?',
+      'isBot': true
+    });
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -142,163 +159,249 @@ class _BodyWidgetState extends State<_BodyWidget> {
   }
 
   void _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+    if (text.trim().isEmpty || _isLoading) return; // Jangan kirim jika kosong atau sedang loading
 
     setState(() {
-      // Tambahkan pesan user
+      // Tambahkan pesan user ke daftar chat
       _chatMessages.add({'text': text.trim(), 'isBot': false});
       _controller.clear();
+      _isLoading = true; // Set loading menjadi true
     });
 
     _scrollToBottom();
 
-    // Tunggu sebentar sebelum bot membalas
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Ambil respon dari bot (pastikan pakai await)
-    String botReply = await _getBotResponse(text.trim());
-
-    setState(() {
-      _chatMessages.add({
-        'text': botReply,
-        'isBot': true,
+    String botReply = 'Maaf, terjadi kesalahan saat memproses permintaan Anda. Silakan coba lagi.'; // Pesan default error
+    try {
+      // Panggil fungsi untuk mendapatkan respons dari bot (Gemini)
+      botReply = await _getBotResponse(text.trim());
+    } catch (e) {
+      print('Error getting bot response: $e'); // Log error untuk debugging
+    } finally {
+      setState(() {
+        // Tambahkan respons bot ke daftar chat
+        _chatMessages.add({
+          'text': botReply,
+          'isBot': true,
+        });
+        _isLoading = false; // Set loading menjadi false setelah respons diterima
       });
-    });
-
-    _scrollToBottom();
+      _scrollToBottom();
+    }
   }
 
-  // RULE - BASED
+  // Fungsi untuk mendapatkan respons dari bot (sekarang didukung Gemini)
   Future<String> _getBotResponse(String question) async {
-    
-    // format uang
-    String formatRupiah(num amount) {
-      final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp', decimalDigits: 0);
-      return formatter.format(amount);
-    }
-
+    // Memastikan ada pengguna yang login, meskipun data akan diambil dari UID yang di-hardcode
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return 'Anda belum login.';
+      return 'Anda belum login. Silakan login untuk menggunakan fitur ini.';
     }
 
     final firestore = FirebaseFirestore.instance;
-    final userDoc = await firestore.collection('users').doc(user.uid).get();
-    if (!userDoc.exists) {
-      return 'Data keuangan tidak ditemukan.';
+    // Mengatur userId secara eksplisit ke ID yang diminta
+    // PERHATIAN: Ini akan menyebabkan chatbot selalu mengambil data untuk UID ini,
+    // terlepas dari pengguna mana yang saat ini login.
+    final String userId = 'Ft1UBlWgyvuFbfnVZ9od'; 
+
+    // --- Ambil Data Pengguna (balance, limitSpend, username) ---
+    DocumentSnapshot userDoc;
+    try {
+      userDoc = await firestore.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        return 'Data pengguna untuk ID $userId tidak ditemukan. Pastikan Anda memiliki entri di koleksi "users" dengan ID ini.';
+      }
+    } catch (e) {
+      print('Error fetching user document: $e');
+      return 'Terjadi kesalahan saat mengambil data pengguna.';
     }
 
-    final data = userDoc.data()!;
-    final balanceRaw = data['balance'];
-    final limitSpendRaw = data['limitSpend'];
-    final balance = (balanceRaw is num)
-        ? balanceRaw
-        : num.tryParse(balanceRaw.toString()) ?? 0;
-    final limitSpend = (limitSpendRaw is num)
-        ? limitSpendRaw
-        : num.tryParse(limitSpendRaw.toString()) ?? 0;
+    final userData = userDoc.data() as Map<String, dynamic>;
+    final balance = (userData['balance'] is num) ? userData['balance'] : num.tryParse(userData['balance'].toString()) ?? 0;
+    // Mengambil limitSpend dari userData, pastikan namanya sesuai dengan di Firebase
+    final limitSpend = (userData['limitSpend'] is num) ? userData['limitSpend'] : num.tryParse(userData['limitSpend']?.toString() ?? '0') ?? 0; 
+    final username = userData['username'] ?? 'Pengguna';
 
-    // Ambil data income & spending
+    // --- Ambil Data Pemasukan & Pengeluaran Mingguan & Total ---
     final now = DateTime.now();
     final oneWeekAgo = now.subtract(const Duration(days: 7));
 
-    final incomeSnapshot = await firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('income')
-        .get();
-
-    final spendingSnapshot = await firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('spending')
-        .get();
-
     num weeklyIncome = 0;
-    for (var doc in incomeSnapshot.docs) {
-      final amount = doc['amount'];
-      final date = (doc['date'] as Timestamp).toDate();
-      if (date.isAfter(oneWeekAgo)) {
-        weeklyIncome += (amount is num ? amount : num.tryParse(amount.toString()) ?? 0);
+    try {
+      final incomeSnapshot = await firestore.collection('users').doc(userId).collection('income').get();
+      for (var doc in incomeSnapshot.docs) {
+        final date = (doc['date'] as Timestamp).toDate();
+        if (date.isAfter(oneWeekAgo)) {
+          final amount = doc['amount'];
+          weeklyIncome += (amount is num ? amount : num.tryParse(amount.toString()) ?? 0);
+        }
       }
+    } catch (e) {
+      print('Error fetching income data: $e');
+      // Lanjutkan tanpa data pemasukan jika ada error
     }
 
     num weeklySpending = 0;
-    for (var doc in spendingSnapshot.docs) {
-      final amount = doc['amount'];
-      final date = (doc['date'] as Timestamp).toDate();
-      if (date.isAfter(oneWeekAgo)) {
-        weeklySpending += (amount is num ? amount : num.tryParse(amount.toString()) ?? 0);
+    num totalSpending = 0; // Untuk kondisi pengeluaran keseluruhan
+    try {
+      final spendingSnapshot = await firestore.collection('users').doc(userId).collection('spending').get();
+      for (var doc in spendingSnapshot.docs) {
+        final date = (doc['date'] as Timestamp).toDate();
+        final amount = doc['amount'];
+        final currentAmount = (amount is num ? amount : num.tryParse(amount.toString()) ?? 0);
+        totalSpending += currentAmount; // Akumulasi total pengeluaran
+        if (date.isAfter(oneWeekAgo)) {
+          weeklySpending += currentAmount;
+        }
       }
+    } catch (e) {
+      print('Error fetching spending data: $e');
+      // Lanjutkan tanpa data pengeluaran jika ada error
     }
 
-    final totalSpending = spendingSnapshot.docs.fold<num>(0, (sum, doc) {
-      final amount = doc['amount'];
-      return sum + (amount is num ? amount : num.tryParse(amount.toString()) ?? 0);
-    });
+    // --- Ambil Data Inventaris (log & stok saat ini) ---
+    // Menggunakan Map untuk menyimpan stok saat ini per item inventaris
+    Map<String, num> currentInventoryStock = {}; 
+    num totalInventoryPurchaseValue = 0; // Mengganti nama variabel agar lebih spesifik
+    try {
+      // Ambil log inventaris dan hitung stok saat ini
+      final inventorySnapshot = await firestore.collection('users').doc(userId).collection('inventory').get();
+      for (var doc in inventorySnapshot.docs) {
+        final data = doc.data();
+        final nameInv = data['nameInv'].toString();
+        final stokChange = (data['stokInv'] is num ? data['stokInv'] : num.tryParse(data['stokInv'].toString()) ?? 0);
+        // Pastikan 'total' ada dan berupa num/string yang bisa diparse
+        final itemTotal = (data['total'] is num ? data['total'] : num.tryParse(data['total']?.toString() ?? '0') ?? 0);
 
-    switch (question.toLowerCase()) {
-      case 'bagaimana kondisi keuanganku?':
-        if (balance <= 0) {
-          return 'Silahkan catat keuangan anda terlebih dahulu.';
-        }
+        // Update stok saat ini
+        currentInventoryStock.update(nameInv, (value) => value + stokChange, ifAbsent: () => stokChange);
+        // Akumulasikan nilai 'total' hanya untuk transaksi pembelian (jika ada field 'type' dan 'purchase')
+        // Jika tidak ada 'type' atau ingin menjumlahkan semua 'total' terlepas dari 'type', baris ini cukup:
+        totalInventoryPurchaseValue += itemTotal; 
+      }
+    } catch (e) {
+      print('Error fetching inventory data: $e');
+      // Lanjutkan tanpa data inventaris jika ada error
+    }
 
-        if (balance - totalSpending <= 0) {
-          return 'Keuangan anda tidak baik. Silahkan kurangi pengeluaran!';
-        }
-
-        if (limitSpendRaw == null) {
-          return 'Kondisi keuangan anda baik, Pertahankan!';
-        } else {
-          if (totalSpending > limitSpend) {
-            return 'Keuangan anda tidak baik. Silahkan kurangi pengeluaran!';
-          } else {
-            return 'Kondisi keuangan anda baik, Pertahankan!';
+    // --- Ambil Data Resep ---
+    List<Map<String, dynamic>> recipes = [];
+    try {
+      final recipesSnapshot = await firestore.collection('users').doc(userId).collection('recipes').get();
+      for (var doc in recipesSnapshot.docs) {
+        final data = doc.data();
+        Map<String, dynamic> recipe = {'name': doc.id, 'price': data['price']};
+        // Tambahkan bahan-bahan resep
+        data.forEach((key, value) {
+          if (key != 'price') { // Asumsikan semua kunci lain adalah bahan
+            recipe[key] = value;
           }
-        }
-
-      case 'apa investasi yang cocok untuk saya?':
-        if (balance <= 0) {
-          return 'Silahkan catat keuangan anda terlebih dahulu';
-        } else if (balance < 1000000) {
-          return 'Fokus bangun Dana Darurat, beli kursus atau buku untuk meningkatkan skill dan penghasilan.';
-        } else if (balance >= 1000000 && balance <= 5000000) {
-          return 'Reksa Dana Pasar Uang. Modal minim, risiko rendah, cair cepat.';
-        } else if (balance > 5000000 && balance <= 20000000) {
-          return 'Reksa Dana Campuran atau Obligasi. Cocok untuk jangka menengah.';
-        } else {
-          return 'Deposito, Emas, dan Saham. Cocok untuk jangka panjang.';
-        }
-
-      case 'berapa jumlah uang yang bisa saya investasikan?':
-        if (balance <= 0) {
-          return 'Silahkan catat keuangan anda terlebih dahulu';
-        } else {
-          final investAmount = (balance * 0.2).round();
-          return 'Anda bisa menggunakan uang sejumlah  ${formatRupiah(investAmount)} untuk investasi.';
-        }
-
-      case 'berapa pemasukan saya minggu ini?':
-        if (balance <= 0) {
-          return 'Silahkan catat keuangan anda terlebih dahulu';
-        } else if (weeklyIncome == 0) {
-          return 'Silahkan catat pemasukan anda minggu ini';
-        } else {
-          return 'Pemasukan minggu ini adalah ${formatRupiah(weeklyIncome)} Tetap produktif!';
-        }
-
-      case 'berapa pengeluaran saya minggu ini?':
-        if (balance <= 0) {
-          return 'Silahkan catat keuangan anda terlebih dahulu';
-        } else if (weeklySpending == 0) {
-          return 'Silahkan catat pengeluaran anda minggu ini';
-        } else {
-          return 'Pengeluaran minggu ini adalah ${formatRupiah(weeklySpending)} Tetap bijak dalam berbelanja!';
-        }
-
-      default:
-        return 'Maaf, pertanyaan anda tidak valid!';
+        });
+        recipes.add(recipe);
+      }
+    } catch (e) {
+      print('Error fetching recipes data: $e');
+      // Lanjutkan tanpa data resep jika ada error
     }
+
+    // --- Ambil Data Penjualan (semua untuk perhitungan total penjualan produk) ---
+    num totalSalesRevenue = 0; // NEW: Inisialisasi total penjualan semua produk
+    List<Map<String, dynamic>> sales = []; // Tetap ambil 10 penjualan terakhir untuk konteks umum
+    try {
+      final allSalesSnapshot = await firestore.collection('users').doc(userId).collection('sales').get();
+      for (var doc in allSalesSnapshot.docs) {
+        final data = doc.data();
+        final itemPrice = (data['price'] is num ? data['price'] : num.tryParse(data['price'].toString()) ?? 0);
+
+        // Hitung total penjualan semua produk
+        totalSalesRevenue += itemPrice;
+        
+        // Ambil 10 penjualan terakhir untuk konteks umum
+        if (sales.length < 10) { // Hanya tambahkan jika belum 10
+          sales.add({
+            'menu': data['menu'],
+            'price': itemPrice,
+            'date': (data['date'] as Timestamp).toDate(),
+          });
+        }
+      }
+      // Sort sales by date descending if it wasn't ordered by Firestore initially for the 10 recent ones
+      sales.sort((a, b) => b['date'].compareTo(a['date']));
+    } catch (e) {
+      print('Error fetching sales data: $e');
+      // Lanjutkan tanpa data penjualan jika ada error
+    }
+
+    // --- Bangun Prompt untuk Gemini ---
+    final StringBuffer prompt = StringBuffer();
+    prompt.writeln('Anda adalah asisten AI yang cerdas dan informatif untuk manajemen kafe, khusus untuk membantu pengguna dengan data keuangan dan inventaris mereka. ');
+    prompt.writeln('Saya akan memberikan Anda informasi terkini mengenai kondisi keuangan dan inventaris kafe saya. ');
+    prompt.writeln('Tolong jawab pertanyaan saya dengan akurat berdasarkan data yang diberikan dan berikan saran yang relevan.');
+    prompt.writeln('');
+    prompt.writeln('--- Data Kafe Saat Ini ---');
+    prompt.writeln('Nama Pengguna: $username');
+    prompt.writeln('Saldo Saat Ini: ${formatRupiah(balance)}');
+    prompt.writeln('Batas Pengeluaran (jika ada): ${limitSpend > 0 ? formatRupiah(limitSpend) : "Tidak diatur"}');
+    prompt.writeln('Pemasukan Minggu Ini: ${formatRupiah(weeklyIncome)}');
+    prompt.writeln('Pengeluaran Minggu Ini: ${formatRupiah(weeklySpending)}');
+    prompt.writeln('Total Pengeluaran Keseluruhan: ${formatRupiah(totalSpending)}');
+    prompt.writeln('Total Biaya Belanja Inventaris Keseluruhan: ${formatRupiah(totalInventoryPurchaseValue)}'); // Menggunakan nama baru
+    prompt.writeln('Total Penjualan Produk Keseluruhan: ${formatRupiah(totalSalesRevenue)}'); // NEW: Tambahkan total penjualan semua produk
+    prompt.writeln('');
+
+    if (currentInventoryStock.isNotEmpty) {
+      prompt.writeln('Stok Inventaris Saat Ini:');
+      currentInventoryStock.forEach((name, stock) {
+        prompt.writeln('- $name: ${stock.toStringAsFixed(2)}'); // Format stok untuk keterbacaan
+      });
+      prompt.writeln('');
+    } else {
+      prompt.writeln('Tidak ada data stok inventaris yang ditemukan.');
+    }
+
+    if (recipes.isNotEmpty) {
+      prompt.writeln('Daftar Resep:');
+      for (var recipe in recipes) {
+        prompt.writeln('- ${recipe['name']} (Harga Jual: ${formatRupiah(recipe['price'])})');
+        recipe.forEach((key, value) {
+          if (key != 'name' && key != 'price') {
+            prompt.writeln('  - Bahan: $key, Jumlah: $value');
+          }
+        });
+      }
+      prompt.writeln('');
+    } else {
+      prompt.writeln('Tidak ada data resep yang ditemukan.');
+    }
+    
+    if (sales.isNotEmpty) {
+      prompt.writeln('10 Penjualan Terakhir:');
+      for (var sale in sales) {
+        prompt.writeln('- Menu: ${sale['menu']}, Harga: ${formatRupiah(sale['price'])}, Tanggal: ${DateFormat('dd-MM-yyyy HH:mm').format(sale['date'])}');
+      }
+      prompt.writeln('');
+    } else {
+      prompt.writeln('Tidak ada data penjualan yang ditemukan.');
+    }
+
+    prompt.writeln('--- Pertanyaan Saya ---');
+    prompt.writeln(question);
+    prompt.writeln('');
+    prompt.writeln('--- Balasan Anda ---'); // Petunjuk untuk Gemini agar merespons
+
+    try {
+      final content = [Content.text(prompt.toString())];
+      final response = await _model.generateContent(content);
+      return response.text ?? 'Maaf, saya tidak dapat menghasilkan respons saat ini. Silakan coba pertanyaan lain.';
+    } catch (e) {
+      print('Error generating content with Gemini: $e');
+      return 'Maaf, terjadi masalah saat berkomunikasi dengan AI. Pastikan API Key Anda benar dan koneksi internet stabil.';
+    }
+  }
+
+  // format uang
+  String formatRupiah(num amount) {
+    final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp', decimalDigits: 0);
+    return formatter.format(amount);
   }
 
   @override
@@ -343,16 +446,21 @@ class _BodyWidgetState extends State<_BodyWidget> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_isLoading) // Tampilkan loading indicator jika isLoading true
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8.0),
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00D09E)),
+                        ),
+                      ),
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
                       alignment: WrapAlignment.center,
                       children: [
-                        _categoryBox("Keuangan", "Bagaimana kondisi keuanganku?"),
-                        _categoryBox("Investasi", "Apa investasi yang cocok untuk saya?"),
-                        _categoryBox("Jumlah Investasi", "Berapa jumlah uang yang bisa saya investasikan?"),
-                        _categoryBox("Pengeluaran", "Berapa pengeluaran saya minggu ini?"),
-                        _categoryBox("Pemasukan", "Berapa pemasukan saya minggu ini?"),
+                        _categoryBox("Penjualan", "Berapa total penjualan produk?"), // Label dan pertanyaan diubah
+                        _categoryBox("Belanja Inventaris", "Berapa total biaya belanja inventaris?"),
+                        _categoryBox("Stok Biji Kopi", "Berapa stok biji kopi saya saat ini?"),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -371,6 +479,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
                             child: TextFormField(
                               controller: _controller,
                               onFieldSubmitted: _sendMessage,
+                              enabled: !_isLoading, // Nonaktifkan input saat loading
                               decoration: InputDecoration(
                                 hintText: 'Pilih atau Ketik Pertanyaanmu!',
                                 hintStyle: const TextStyle(
@@ -389,7 +498,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
                             ),
                           ),
                           IconButton(
-                            onPressed: () => _sendMessage(_controller.text),
+                            onPressed: _isLoading ? null : () => _sendMessage(_controller.text), // Nonaktifkan tombol saat loading
                             icon: const Icon(Icons.send, color: Color(0xFF00D09E)),
                           ),
                         ],
@@ -408,9 +517,11 @@ class _BodyWidgetState extends State<_BodyWidget> {
   Widget _categoryBox(String label, String questionText) {
     return GestureDetector(
       onTap: () {
-        setState(() {
-          _controller.text = questionText; // tampilkan pertanyaan di input field
-        });
+        if (!_isLoading) { // Hanya izinkan tap jika tidak sedang loading
+          setState(() {
+            _controller.text = questionText; // tampilkan pertanyaan di input field
+          });
+        }
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -446,7 +557,6 @@ class ChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = const Color(0xFF00D09E);
     final alignment = isBot ? CrossAxisAlignment.start : CrossAxisAlignment.end;
-    final tailAlignment = isBot ? Alignment.bottomLeft : Alignment.bottomRight;
 
     return Column(
       crossAxisAlignment: alignment,
