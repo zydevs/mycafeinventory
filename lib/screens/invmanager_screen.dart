@@ -125,7 +125,7 @@ class _InvManagerScreenState extends State<InvManagerScreen> {
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 10),
                           child: Text(
-                            'Riwayat Inventory',
+                            'Manajemen Inventory',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,

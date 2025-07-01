@@ -187,7 +187,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 10),
                           child: Text(
-                            'Catat\nInventory',
+                            'Catat Inventory',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,

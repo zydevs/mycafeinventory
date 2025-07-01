@@ -100,9 +100,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               width: 45,
             ),
             const SizedBox(width: 10),
-            Text(
+            const Text(
               'Chatbot My Cafe Inventory',
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
@@ -130,8 +130,10 @@ class _BodyWidgetState extends State<_BodyWidget> {
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false; // State untuk loading indicator
 
-  // API Key Gemini yang telah diperbarui
-  final String _geminiApiKey = "AIzaSyAEq89rbegEVk1-g3XCHwRA21viZL_8UqQ"; 
+  // --------------------------------------------------------------------------
+  // TAHAP 5: PENGEMBANGAN MODEL CHATBOT (INTEGRASI GEMINI API)
+  // --------------------------------------------------------------------------
+  final String _geminiApiKey = "AIzaSyAEq89rbegEVk1-g3XCHwRA21viZL_8UqQ";
   late final GenerativeModel _model;
 
   @override
@@ -190,20 +192,23 @@ class _BodyWidgetState extends State<_BodyWidget> {
   }
 
   // Fungsi untuk mendapatkan respons dari bot (sekarang didukung Gemini)
+  // Ini mencakup TAHAP 2: PENGUMPULAN & PRA-PEMROSESAN DATA (Data Real-time dari Firestore)
+  // Serta TAHAP 3: ANOTASI DATA (Implicit via Prompt Engineering Gemini)
+  // Dan TAHAP 4: DESAIN SISTEM & ARSITEKTUR (Retrieval-Augmented Generation)
+  // Dan TAHAP 5: PENGEMBANGAN MODEL CHATBOT (Memanfaatkan LLM Gemini melalui API)
   Future<String> _getBotResponse(String question) async {
-    // Memastikan ada pengguna yang login, meskipun data akan diambil dari UID yang di-hardcode
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       return 'Anda belum login. Silakan login untuk menggunakan fitur ini.';
     }
 
     final firestore = FirebaseFirestore.instance;
-    // Mengatur userId secara eksplisit ke ID yang diminta
-    // PERHATIAN: Ini akan menyebabkan chatbot selalu mengambil data untuk UID ini,
-    // terlepas dari pengguna mana yang saat ini login.
-    final String userId = 'Ft1UBlWgyvuFbfnVZ9od'; 
+    // Mengatur userId secara eksplisit ke ID yang diminta untuk demo.
+    // PERHATIAN: Di produksi, ini harus dinamai berdasarkan user yang sedang login.
+    final String userId = 'Ft1UBlWgyvuFbfnVZ9od';
 
-    // --- Ambil Data Pengguna (balance, limitSpend, username) ---
+    // --- PENGUMPULAN DATA REAL-TIME DARI FIRESTORE ---
+    // Data Pengguna (balance, limitSpend, username)
     DocumentSnapshot userDoc;
     try {
       userDoc = await firestore.collection('users').doc(userId).get();
@@ -217,11 +222,10 @@ class _BodyWidgetState extends State<_BodyWidget> {
 
     final userData = userDoc.data() as Map<String, dynamic>;
     final balance = (userData['balance'] is num) ? userData['balance'] : num.tryParse(userData['balance'].toString()) ?? 0;
-    // Mengambil limitSpend dari userData, pastikan namanya sesuai dengan di Firebase
-    final limitSpend = (userData['limitSpend'] is num) ? userData['limitSpend'] : num.tryParse(userData['limitSpend']?.toString() ?? '0') ?? 0; 
+    final limitSpend = (userData['limitSpend'] is num) ? userData['limitSpend'] : num.tryParse(userData['limitSpend']?.toString() ?? '0') ?? 0;
     final username = userData['username'] ?? 'Pengguna';
 
-    // --- Ambil Data Pemasukan & Pengeluaran Mingguan & Total ---
+    // Data Pemasukan & Pengeluaran Mingguan & Total
     final now = DateTime.now();
     final oneWeekAgo = now.subtract(const Duration(days: 7));
 
@@ -237,31 +241,28 @@ class _BodyWidgetState extends State<_BodyWidget> {
       }
     } catch (e) {
       print('Error fetching income data: $e');
-      // Lanjutkan tanpa data pemasukan jika ada error
     }
 
     num weeklySpending = 0;
-    num totalSpending = 0; // Untuk kondisi pengeluaran keseluruhan
+    num totalSpending = 0;
     try {
       final spendingSnapshot = await firestore.collection('users').doc(userId).collection('spending').get();
       for (var doc in spendingSnapshot.docs) {
         final date = (doc['date'] as Timestamp).toDate();
         final amount = doc['amount'];
         final currentAmount = (amount is num ? amount : num.tryParse(amount.toString()) ?? 0);
-        totalSpending += currentAmount; // Akumulasi total pengeluaran
+        totalSpending += currentAmount;
         if (date.isAfter(oneWeekAgo)) {
           weeklySpending += currentAmount;
         }
       }
     } catch (e) {
       print('Error fetching spending data: $e');
-      // Lanjutkan tanpa data pengeluaran jika ada error
     }
 
-    // --- Ambil Data Inventaris (log & stok saat ini) ---
-    // Menggunakan Map untuk menyimpan stok saat ini per item inventaris
-    Map<String, num> currentInventoryStock = {}; 
-    num totalInventoryPurchaseValue = 0; // Mengganti nama variabel agar lebih spesifik
+    // Data Inventaris (stok saat ini dari pencatatan inventaris baru)
+    Map<String, num> currentInventoryStock = {};
+    num totalInventoryPurchaseValue = 0;
     try {
       // Ambil log inventaris dan hitung stok saat ini
       final inventorySnapshot = await firestore.collection('users').doc(userId).collection('inventory').get();
@@ -269,30 +270,25 @@ class _BodyWidgetState extends State<_BodyWidget> {
         final data = doc.data();
         final nameInv = data['nameInv'].toString();
         final stokChange = (data['stokInv'] is num ? data['stokInv'] : num.tryParse(data['stokInv'].toString()) ?? 0);
-        // Pastikan 'total' ada dan berupa num/string yang bisa diparse
         final itemTotal = (data['total'] is num ? data['total'] : num.tryParse(data['total']?.toString() ?? '0') ?? 0);
 
-        // Update stok saat ini
+        // Update stok saat ini: asumsi stokInv merepresentasikan perubahan, dan kita ingin tahu stok kumulatif
         currentInventoryStock.update(nameInv, (value) => value + stokChange, ifAbsent: () => stokChange);
-        // Akumulasikan nilai 'total' hanya untuk transaksi pembelian (jika ada field 'type' dan 'purchase')
-        // Jika tidak ada 'type' atau ingin menjumlahkan semua 'total' terlepas dari 'type', baris ini cukup:
-        totalInventoryPurchaseValue += itemTotal; 
+        totalInventoryPurchaseValue += itemTotal;
       }
     } catch (e) {
       print('Error fetching inventory data: $e');
-      // Lanjutkan tanpa data inventaris jika ada error
     }
 
-    // --- Ambil Data Resep ---
+    // Data Resep
     List<Map<String, dynamic>> recipes = [];
     try {
       final recipesSnapshot = await firestore.collection('users').doc(userId).collection('recipes').get();
       for (var doc in recipesSnapshot.docs) {
         final data = doc.data();
         Map<String, dynamic> recipe = {'name': doc.id, 'price': data['price']};
-        // Tambahkan bahan-bahan resep
         data.forEach((key, value) {
-          if (key != 'price') { // Asumsikan semua kunci lain adalah bahan
+          if (key != 'price') {
             recipe[key] = value;
           }
         });
@@ -300,23 +296,20 @@ class _BodyWidgetState extends State<_BodyWidget> {
       }
     } catch (e) {
       print('Error fetching recipes data: $e');
-      // Lanjutkan tanpa data resep jika ada error
     }
 
-    // --- Ambil Data Penjualan (semua untuk perhitungan total penjualan produk) ---
-    num totalSalesRevenue = 0; // NEW: Inisialisasi total penjualan semua produk
-    List<Map<String, dynamic>> sales = []; // Tetap ambil 10 penjualan terakhir untuk konteks umum
+    // Data Penjualan (dari setiap transaksi kasir)
+    num totalSalesRevenue = 0;
+    List<Map<String, dynamic>> sales = [];
     try {
       final allSalesSnapshot = await firestore.collection('users').doc(userId).collection('sales').get();
       for (var doc in allSalesSnapshot.docs) {
         final data = doc.data();
         final itemPrice = (data['price'] is num ? data['price'] : num.tryParse(data['price'].toString()) ?? 0);
+        totalSalesRevenue += itemPrice; // Akumulasi total penjualan semua produk
 
-        // Hitung total penjualan semua produk
-        totalSalesRevenue += itemPrice;
-        
         // Ambil 10 penjualan terakhir untuk konteks umum
-        if (sales.length < 10) { // Hanya tambahkan jika belum 10
+        if (sales.length < 10) {
           sales.add({
             'menu': data['menu'],
             'price': itemPrice,
@@ -324,18 +317,23 @@ class _BodyWidgetState extends State<_BodyWidget> {
           });
         }
       }
-      // Sort sales by date descending if it wasn't ordered by Firestore initially for the 10 recent ones
       sales.sort((a, b) => b['date'].compareTo(a['date']));
     } catch (e) {
       print('Error fetching sales data: $e');
-      // Lanjutkan tanpa data penjualan jika ada error
     }
 
-    // --- Bangun Prompt untuk Gemini ---
+    // --------------------------------------------------------------------------
+    // TAHAP 3: ANOTASI DATA (IMPLICIT VIA PROMPT ENGINEERING GEMINI)
+    // TAHAP 4: DESAIN SISTEM & ARSITEKTUR (RETRIEVAL-AUGMENTED GENERATION)
+    // TAHAP 5: PENGEMBANGAN MODEL CHATBOT (PROMPT ENGINEERING UNTUK GEMINI)
+    // --------------------------------------------------------------------------
     final StringBuffer prompt = StringBuffer();
     prompt.writeln('Anda adalah asisten AI yang cerdas dan informatif untuk manajemen kafe, khusus untuk membantu pengguna dengan data keuangan dan inventaris mereka. ');
     prompt.writeln('Saya akan memberikan Anda informasi terkini mengenai kondisi keuangan dan inventaris kafe saya. ');
     prompt.writeln('Tolong jawab pertanyaan saya dengan akurat berdasarkan data yang diberikan dan berikan saran yang relevan.');
+    prompt.writeln('Jawablah dengan bahasa yang ramah, ringkas, dan langsung pada inti pertanyaan. Jangan menambahkan informasi yang tidak diminta.');
+    prompt.writeln('Jika pertanyaan tidak relevan dengan data yang tersedia, katakan bahwa Anda tidak dapat membantu atau pertanyaan tidak dikenali.');
+    prompt.writeln('Jika ada stok yang hampir habis, sebutkan nama itemnya.');
     prompt.writeln('');
     prompt.writeln('--- Data Kafe Saat Ini ---');
     prompt.writeln('Nama Pengguna: $username');
@@ -344,15 +342,25 @@ class _BodyWidgetState extends State<_BodyWidget> {
     prompt.writeln('Pemasukan Minggu Ini: ${formatRupiah(weeklyIncome)}');
     prompt.writeln('Pengeluaran Minggu Ini: ${formatRupiah(weeklySpending)}');
     prompt.writeln('Total Pengeluaran Keseluruhan: ${formatRupiah(totalSpending)}');
-    prompt.writeln('Total Biaya Belanja Inventaris Keseluruhan: ${formatRupiah(totalInventoryPurchaseValue)}'); // Menggunakan nama baru
-    prompt.writeln('Total Penjualan Produk Keseluruhan: ${formatRupiah(totalSalesRevenue)}'); // NEW: Tambahkan total penjualan semua produk
+    prompt.writeln('Total Biaya Belanja Inventaris Keseluruhan: ${formatRupiah(totalInventoryPurchaseValue)}');
+    prompt.writeln('Total Penjualan Produk Keseluruhan: ${formatRupiah(totalSalesRevenue)}');
     prompt.writeln('');
 
     if (currentInventoryStock.isNotEmpty) {
       prompt.writeln('Stok Inventaris Saat Ini:');
       currentInventoryStock.forEach((name, stock) {
-        prompt.writeln('- $name: ${stock.toStringAsFixed(2)}'); // Format stok untuk keterbacaan
+        prompt.writeln('- $name: ${stock.toStringAsFixed(2)}');
       });
+      // Logika identifikasi stok hampir habis (threshold bisa disesuaikan)
+      List<String> lowStockItems = [];
+      currentInventoryStock.forEach((name, stock) {
+        if (stock < 5 && stock > 0) { // Contoh: kurang dari 5 unit dianggap hampir habis
+          lowStockItems.add(name);
+        }
+      });
+      if (lowStockItems.isNotEmpty) {
+        prompt.writeln('Stok Hampir Habis: ${lowStockItems.join(', ')}');
+      }
       prompt.writeln('');
     } else {
       prompt.writeln('Tidak ada data stok inventaris yang ditemukan.');
@@ -372,7 +380,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
     } else {
       prompt.writeln('Tidak ada data resep yang ditemukan.');
     }
-    
+
     if (sales.isNotEmpty) {
       prompt.writeln('10 Penjualan Terakhir:');
       for (var sale in sales) {
@@ -386,7 +394,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
     prompt.writeln('--- Pertanyaan Saya ---');
     prompt.writeln(question);
     prompt.writeln('');
-    prompt.writeln('--- Balasan Anda ---'); // Petunjuk untuk Gemini agar merespons
+    prompt.writeln('--- Balasan Anda (Fokus pada Jawaban Langsung) ---'); // Petunjuk untuk Gemini agar merespons secara langsung
 
     try {
       final content = [Content.text(prompt.toString())];
@@ -415,7 +423,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
             Padding(
               padding: const EdgeInsets.only(bottom: 140), // area untuk input
               child: SingleChildScrollView(
-                controller: _scrollController, // pastikan sudah didefinisikan di atas
+                controller: _scrollController,
                 padding: pagePadding,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -446,6 +454,9 @@ class _BodyWidgetState extends State<_BodyWidget> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // --------------------------------------------------------------------------
+                    // TAHAP 6: PENGUJIAN DAN VALIDASI (Indikator Loading untuk User Experience)
+                    // --------------------------------------------------------------------------
                     if (_isLoading) // Tampilkan loading indicator jika isLoading true
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -453,14 +464,19 @@ class _BodyWidgetState extends State<_BodyWidget> {
                           valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00D09E)),
                         ),
                       ),
+                    // --------------------------------------------------------------------------
+                    // TAHAP 1: ANALISIS KEBUTUHAN & PERENCANAAN SISTEM (Pilihan Pertanyaan Utama)
+                    // --------------------------------------------------------------------------
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
                       alignment: WrapAlignment.center,
                       children: [
-                        _categoryBox("Penjualan", "Berapa total penjualan produk?"), // Label dan pertanyaan diubah
-                        _categoryBox("Belanja Inventaris", "Berapa total biaya belanja inventaris?"),
+                        _categoryBox("Penjualan", "Berapa total penjualan produk?"),
+                        _categoryBox("Biaya Inventaris", "Berapa total biaya belanja inventaris?"),
                         _categoryBox("Stok Biji Kopi", "Berapa stok biji kopi saya saat ini?"),
+                        _categoryBox("Resep Latte", "Apa resep untuk membuat Latte?"), // Tambahan contoh resep
+                        _categoryBox("Stok Hampir Habis", "Apakah ada stok yang hampir habis?"), // Tambahan
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -494,6 +510,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
                                 color: Colors.black,
                                 fontSize: 14,
                                 fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                           ),

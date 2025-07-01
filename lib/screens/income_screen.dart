@@ -149,7 +149,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 10),
                           child: Text(
-                            'Catat\nPenjualan',
+                            'Catat Penjualan',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
