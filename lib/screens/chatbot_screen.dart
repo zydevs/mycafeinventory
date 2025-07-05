@@ -133,7 +133,7 @@ class _BodyWidgetState extends State<_BodyWidget> {
   // --------------------------------------------------------------------------
   // TAHAP 5: PENGEMBANGAN MODEL CHATBOT (INTEGRASI GEMINI API)
   // --------------------------------------------------------------------------
-  final String _geminiApiKey = "AIzaSyAEq89rbegEVk1-g3XCHwRA21viZL_8UqQ";
+  final String _geminiApiKey = "XXXX";
   late final GenerativeModel _model;
 
   @override
